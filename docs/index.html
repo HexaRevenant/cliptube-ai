@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClipTube AI — Turn YouTube into transcripts, summaries and shareable insights</title>
+    <meta name="description" content="ClipTube AI is a native Rust desktop app that turns YouTube videos into transcripts, summaries, key points and ready-to-share text." />
+    <meta property="og:title" content="ClipTube AI" />
+    <meta property="og:description" content="Native desktop app for transcripts, summaries, AI chat and reusable content from YouTube videos." />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="assets/screenshots/app-preview-en.png" />
+    <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="site-shell">
+      <header class="topbar">
+        <a class="brand" href="#hero" aria-label="ClipTube AI home">
+          <img src="assets/icon.svg" alt="ClipTube AI logo" />
+          <span class="brand-name">ClipTube AI</span>
+        </a>
+        <div class="topbar-actions">
+          <nav class="nav" aria-label="Primary">
+            <a href="#features" data-i18n="navFeatures">Features</a>
+            <a href="#workflow" data-i18n="navWorkflow">How it works</a>
+            <a href="#downloads" data-i18n="navDownloads">Downloads</a>
+            <a href="#faq" data-i18n="navFaq">FAQ</a>
+            <a href="app/" data-i18n="navWebApp">Web App</a>
+          </nav>
+          <div class="lang-switch" aria-label="Language switcher">
+            <label class="lang-select-label" for="language-select">🌐</label>
+            <select id="language-select" class="lang-select" aria-label="Language switcher">
+              <option value="en">🇺🇸 English</option>
+              <option value="es">🇪🇸 Español</option>
+              <option value="pt">🇧🇷 Português</option>
+              <option value="fr">🇫🇷 Français</option>
+              <option value="de">🇩🇪 Deutsch</option>
+              <option value="ja">🇯🇵 日本語</option>
+              <option value="zh-Hans">🇨🇳 简体中文</option>
+              <option value="ru">🇷🇺 Русский</option>
+              <option value="ar">🇸🇦 العربية</option>
+              <option value="hi">🇮🇳 हिन्दी</option>
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero" id="hero">
+          <div class="hero-copy reveal">
+            <div class="eyebrow" data-i18n="heroEyebrow">Native desktop · Rust + Ollama · Linux / macOS / Windows</div>
+            <h1 data-i18n="heroTitle">Turn long YouTube videos into reusable intelligence.</h1>
+            <p class="hero-text" data-i18n="heroText">
+              ClipTube AI extracts transcripts, builds summaries, surfaces key points, gives you a contextual AI chat, and turns video knowledge into text you can paste, refine and share fast.
+            </p>
+            <div class="hero-actions">
+              <a class="button primary" data-release-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/releases/latest" data-i18n="downloadBtn">Download</a>
+              <a class="button secondary" href="app/" data-i18n="webAppBtn">Open web app</a>
+              <a class="button secondary" data-repo-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai" data-i18n="githubBtn">View on GitHub</a>
+            </div>
+            <div class="hero-meta">
+              <span data-i18n="heroMeta1">Built for creators</span>
+              <span data-i18n="heroMeta2">Students</span>
+              <span data-i18n="heroMeta3">Researchers</span>
+              <span data-i18n="heroMeta4">Productivity nerds</span>
+            </div>
+          </div>
+
+          <div class="hero-visual reveal delay-1" aria-hidden="true">
+            <div class="floating-badge badge-cyan" data-i18n="heroBadge1">AI chat</div>
+            <div class="floating-badge badge-pink" data-i18n="heroBadge2">Ready to share</div>
+            <div class="app-frame">
+              <img data-preview-image src="assets/screenshots/app-preview-en.png" alt="" />
+            </div>
+          </div>
+        </section>
+
+        <section class="metrics reveal delay-2" aria-label="Highlights">
+          <article><strong data-i18n="metric1Title">Full transcript</strong><span data-i18n="metric1Text">Pull the video text and work from the source.</span></article>
+          <article><strong data-i18n="metric2Title">Ollama-native</strong><span data-i18n="metric2Text">Choose local models directly from your installed catalog.</span></article>
+          <article><strong data-i18n="metric3Title">Cross-platform</strong><span data-i18n="metric3Text">Desktop release flow prepared for Linux, macOS and Windows.</span></article>
+        </section>
+
+        <section class="section" id="features">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="featuresEyebrow">Core capabilities</span>
+            <h2 data-i18n="featuresTitle">Everything you need to go from “I should watch that later” to “I already extracted the value.”</h2>
+          </div>
+          <div class="feature-grid">
+            <article class="feature-card reveal"><span>📝</span><h3 data-i18n="feature1Title">Transcript first</h3><p data-i18n="feature1Text">Paste a YouTube URL or ID and recover the full transcript as the source of truth.</p></article>
+            <article class="feature-card reveal delay-1"><span>🧠</span><h3 data-i18n="feature2Title">AI summary</h3><p data-i18n="feature2Text">Generate clean summaries optimized for understanding, scanning and reuse.</p></article>
+            <article class="feature-card reveal delay-2"><span>🎯</span><h3 data-i18n="feature3Title">Key points</h3><p data-i18n="feature3Text">Extract the ideas worth remembering without hunting through the full video.</p></article>
+            <article class="feature-card reveal"><span>💬</span><h3 data-i18n="feature4Title">Contextual AI chat</h3><p data-i18n="feature4Text">Ask direct questions about the video and refine outputs without leaving the app.</p></article>
+            <article class="feature-card reveal delay-1"><span>📋</span><h3 data-i18n="feature5Title">Ready-to-share text</h3><p data-i18n="feature5Text">Produce polished text blocks you can paste into chats, notes, docs or posts.</p></article>
+            <article class="feature-card reveal delay-2"><span>🎛</span><h3 data-i18n="feature6Title">Live Ollama model selector</h3><p data-i18n="feature6Text">Load available models straight from Ollama and swap them from the UI.</p></article>
+            <article class="feature-card reveal"><span>🌍</span><h3 data-i18n="feature7Title">Multilingual aware</h3><p data-i18n="feature7Text">System-language detection and multilingual support make the app friendlier out of the box.</p></article>
+            <article class="feature-card reveal delay-1"><span>🦀</span><h3 data-i18n="feature8Title">Native Rust desktop</h3><p data-i18n="feature8Text">Built with Rust + eframe/egui for a fast, local-first desktop workflow.</p></article>
+          </div>
+        </section>
+
+        <section class="section workflow" id="workflow">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="workflowEyebrow">How it works</span>
+            <h2 data-i18n="workflowTitle">Fast enough for daily use. Structured enough for real work.</h2>
+          </div>
+          <div class="steps">
+            <article class="step reveal"><span>01</span><h3 data-i18n="step1Title">Paste the video</h3><p data-i18n="step1Text">Drop a YouTube URL or video ID into ClipTube AI.</p></article>
+            <article class="step reveal delay-1"><span>02</span><h3 data-i18n="step2Title">Fetch the transcript</h3><p data-i18n="step2Text">Pull the raw transcript and prepare the source material for analysis.</p></article>
+            <article class="step reveal delay-2"><span>03</span><h3 data-i18n="step3Title">Generate useful output</h3><p data-i18n="step3Text">Create summaries, key points, AI answers and share-ready text blocks.</p></article>
+            <article class="step reveal delay-3"><span>04</span><h3 data-i18n="step4Title">Copy, refine, publish</h3><p data-i18n="step4Text">Reuse the result in messages, docs, notes, research workflows or content pipelines.</p></article>
+          </div>
+        </section>
+
+        <section class="section share-ready">
+          <div class="share-card reveal">
+            <div class="share-copy">
+              <span class="eyebrow" data-i18n="shareEyebrow">Ready-to-share text</span>
+              <h2 data-i18n="shareTitle">Copy the output and drop it straight into chat, docs or notes.</h2>
+              <p data-i18n="shareText">
+                ClipTube AI is designed to turn video knowledge into reusable text. This example block shows the kind of output the app helps you produce once the transcript, summary and key points are ready.
+              </p>
+            </div>
+            <div class="share-box">
+              <div class="share-box-head">
+                <strong data-i18n="shareExampleTitle">Example output</strong>
+                <button class="button tertiary copy-button" type="button" data-copy-target="share-example" data-i18n="copyBtn">Copy text</button>
+              </div>
+              <textarea id="share-example" readonly data-i18n-value="shareExample">Resumen
+
+Video about rapid knowledge extraction from long-form YouTube content. Main focus: turn transcript-heavy videos into short, reusable insights fast.
+
+Puntos Importantes
+- Pull the transcript first so the summary stays grounded in the original content.
+- Extract key points that can be reused in notes, research or team updates.
+- Generate ready-to-share text so the result is useful immediately.
+
+URL
+https://www.youtube.com/watch?v=example</textarea>
+              <p class="copy-feedback" data-copy-feedback aria-live="polite"></p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section downloads" id="downloads">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="downloadsEyebrow">Platform support</span>
+            <h2 data-i18n="downloadsTitle">Download the build that fits your desktop.</h2>
+          </div>
+          <div class="download-grid">
+            <article class="download-card reveal">
+              <div class="platform" data-i18n="webLabel">🌐 Web</div>
+              <h3 data-i18n="webTitle">Browser app</h3>
+              <p data-i18n="webText">Open the web runtime with Ollama connection, transcript backend support and the same core flow as the desktop app.</p>
+              <a class="button tertiary" href="app/" data-i18n="webBtn">Open web app</a>
+            </article>
+            <article class="download-card reveal">
+              <div class="platform" data-i18n="linuxLabel">🐧 Linux</div>
+              <h3 data-i18n="linuxTitle">AppImage</h3>
+              <p data-i18n="linuxText">Portable Linux build with desktop integration support.</p>
+              <a class="button tertiary" data-release-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/releases/latest" data-i18n="linuxBtn">Get Linux build</a>
+            </article>
+            <article class="download-card reveal delay-1">
+              <div class="platform" data-i18n="macLabel">🍎 macOS</div>
+              <h3 data-i18n="macTitle">DMG + App bundle</h3>
+              <p data-i18n="macText">Drag-and-drop installation flow plus zipped `.app` bundle for releases.</p>
+              <a class="button tertiary" data-release-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/releases/latest" data-i18n="macBtn">Get macOS build</a>
+            </article>
+            <article class="download-card reveal delay-2">
+              <div class="platform" data-i18n="winLabel">🪟 Windows</div>
+              <h3 data-i18n="winTitle">ZIP / EXE</h3>
+              <p data-i18n="winText">Native executable package with Windows icon resources included.</p>
+              <a class="button tertiary" data-release-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/releases/latest" data-i18n="winBtn">Get Windows build</a>
+            </article>
+          </div>
+        </section>
+
+        <section class="section config-guide" id="setup">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="setupEyebrow">Setup</span>
+            <h2 data-i18n="setupTitle">Configure ClipTube AI in a few minutes.</h2>
+            <p data-i18n="setupText">Whether you use the desktop app or the web runtime, the basic setup is the same: make sure Ollama is running, point ClipTube AI to the right host and port, and use the transcript backend when you want reliable browser-side transcript fetching.</p>
+          </div>
+          <div class="steps">
+            <article class="step reveal">
+              <span>01</span>
+              <h3 data-i18n="setup1Title">Start Ollama</h3>
+              <p data-i18n="setup1Text">Run your local Ollama instance and confirm your models are available. The default ClipTube AI connection expects <code>127.0.0.1:11434</code>.</p>
+            </article>
+            <article class="step reveal delay-1">
+              <span>02</span>
+              <h3 data-i18n="setup2Title">Configure host and port</h3>
+              <p data-i18n="setup2Text">In the app settings, set the Ollama host and port, or provide a full endpoint override if you use a remote instance.</p>
+            </article>
+            <article class="step reveal delay-2">
+              <span>03</span>
+              <h3 data-i18n="setup3Title">Use the transcript backend for the web app</h3>
+              <p data-i18n="setup3Text">For the browser version, run the local runtime server and keep the transcript backend pointing to the same origin so YouTube transcript requests can be resolved server-side.</p>
+            </article>
+            <article class="step reveal delay-3">
+              <span>04</span>
+              <h3 data-i18n="setup4Title">Pick your model and output style</h3>
+              <p data-i18n="setup4Text">Once the connection is healthy, choose a model, fetch the transcript, and generate summaries, key points or share-ready text.</p>
+            </article>
+          </div>
+          <div class="cta-band reveal setup-band">
+            <p class="setup-band-label" data-i18n="setupCommandLabel">Recommended local command for the web runtime:</p>
+            <div class="setup-band-grid">
+              <div class="share-box setup-command-box">
+                <div class="share-box-head">
+                  <strong data-i18n="setupCommandTitle">Run the local web runtime</strong>
+                  <button class="button tertiary copy-button" type="button" data-copy-target="setup-command" data-i18n="copyBtn">Copy text</button>
+                </div>
+                <textarea id="setup-command" readonly data-i18n-value="setupCommand">node scripts/web_runtime_server.js</textarea>
+                <p class="copy-feedback" data-copy-feedback aria-live="polite"></p>
+              </div>
+              <div class="setup-note">
+                <strong data-i18n="setupOfflineTitle">Installable PWA + local full mode</strong>
+                <p data-i18n="setupOfflineText">On GitHub Pages, ClipTube AI Web works as an installable PWA and can cache the interface offline. For full transcript fetching and Ollama-powered analysis, use the local web runtime.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section preview-block">
+          <div class="preview-copy reveal">
+            <span class="eyebrow" data-i18n="previewEyebrow">Preview</span>
+            <h2 data-i18n="previewTitle">Built for serious note-taking, summarization and content reuse.</h2>
+            <p data-i18n="previewText">
+              The preview below is a polished placeholder composition until final product screenshots are added. The section is already structured so you can swap in real captures later without changing the page layout.
+            </p>
+          </div>
+          <div class="preview-frame reveal delay-1">
+            <img data-preview-image src="assets/screenshots/app-preview-en.png" alt="Localized preview of the ClipTube AI desktop interface" />
+          </div>
+        </section>
+
+        <section class="section open-source">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="ossEyebrow">Open source</span>
+            <h2 data-i18n="ossTitle">Local-first workflow. Native desktop feel. Transparent stack.</h2>
+          </div>
+          <div class="opensource-grid">
+            <article class="source-card reveal"><h3 data-i18n="oss1Title">Rust + eframe/egui</h3><p data-i18n="oss1Text">Native desktop experience with a modern Rust stack.</p></article>
+            <article class="source-card reveal delay-1"><h3 data-i18n="oss2Title">Ollama integration</h3><p data-i18n="oss2Text">Use your local model catalog instead of locking everything behind a hosted SaaS.</p></article>
+            <article class="source-card reveal delay-2"><h3 data-i18n="oss3Title">GitHub-native</h3><p data-i18n="oss3Text">Releases, packaging, icons and automation are all versioned in the repo.</p></article>
+          </div>
+          <div class="cta-band reveal">
+            <p data-i18n="ossCtaText">Want to inspect the code, follow releases, or contribute?</p>
+            <div class="cta-actions">
+              <span class="license-pill">MIT License</span>
+              <a class="button secondary" data-repo-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai" data-i18n="ossCtaBtn">Explore the repository</a>
+              <a class="button tertiary" data-license-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/blob/main/LICENSE" rel="noreferrer" data-i18n="footerLicense">License</a>
+            </div>
+          </div>
+        </section>
+
+        <section class="section faq" id="faq">
+          <div class="section-head reveal">
+            <span class="eyebrow" data-i18n="faqEyebrow">FAQ</span>
+            <h2 data-i18n="faqTitle">Quick answers before you download.</h2>
+          </div>
+          <div class="faq-list">
+            <details class="faq-item reveal" open>
+              <summary data-i18n="faq1Q">Does ClipTube AI need internet?</summary>
+              <p data-i18n="faq1A">You need internet to access YouTube content. The AI model side is designed around Ollama, so summarization and chat can run with your local setup.</p>
+            </details>
+            <details class="faq-item reveal delay-1">
+              <summary data-i18n="faq2Q">Does it work with Ollama locally?</summary>
+              <p data-i18n="faq2A">Yes. ClipTube AI can list models directly from your local Ollama instance and use them for summaries and chat.</p>
+            </details>
+            <details class="faq-item reveal delay-2">
+              <summary data-i18n="faq3Q">Is it available for Linux, macOS and Windows?</summary>
+              <p data-i18n="faq3A">Yes. The project is prepared to publish Linux AppImage, macOS DMG / app bundle, and Windows ZIP / EXE packages.</p>
+            </details>
+            <details class="faq-item reveal delay-3">
+              <summary data-i18n="faq4Q">Is it open source?</summary>
+              <p data-i18n="faq4A">Yes. The repository, release automation, packaging and assets are meant to be shared publicly through GitHub.</p>
+            </details>
+          </div>
+        </section>
+      </main>
+
+      <footer class="footer reveal">
+        <div>
+          <strong>ClipTube AI</strong>
+          <p data-i18n="footerText">Turn videos into transcript-powered summaries, insights and shareable output.</p>
+        </div>
+        <div class="footer-links">
+          <a data-repo-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai" data-i18n="footerGithub">GitHub</a>
+          <a data-release-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/releases/latest" data-i18n="footerReleases">Releases</a>
+          <a data-license-link href="https://github.com/YOUR_GITHUB_USERNAME/cliptube-ai/blob/main/LICENSE" rel="noreferrer" data-i18n="footerLicense">License</a>
+        </div>
+        <div class="footer-note">© <span id="year"></span> <span data-i18n="footerNote">ClipTube AI. Built for fast understanding and reuse.</span></div>
+      </footer>
+    </div>
+    <script src="script.js"></script>
+  </body>
+</html>

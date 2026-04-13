@@ -1,0 +1,21 @@
+[package]
+name = "cliptube-ai"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[dependencies]
+arboard = "3.6.1"
+eframe = { version = "0.34.1", default-features = true }
+html-escape = "0.2.13"
+regex = "1.12.3"
+reqwest = { version = "0.13.2", default-features = false, features = ["json", "cookies", "rustls", "gzip", "brotli", "deflate"] }
+resvg = "0.46.0"
+roxmltree = "0.21.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+thiserror = "2.0.18"
+tokio = { version = "1.51.1", features = ["full"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "fmt"] }
+url = "2.5.8"

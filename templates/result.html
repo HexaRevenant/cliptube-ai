@@ -1,0 +1,58 @@
+<div class="panel" style="margin-top: 20px; display:grid; gap: 18px;">
+  <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+    <div>
+      <div style="font-size:0.9rem; color: var(--muted);">Video analizado</div>
+      <a href="{{ result.video_url }}" target="_blank" rel="noreferrer" style="color: var(--accent-2); word-break: break-all;">
+        {{ result.video_url }}
+      </a>
+      <div style="margin-top:6px; color: var(--muted); font-size: 0.92rem;">
+        ID: {{ result.video_id }} · Idioma: {{ result.transcript_language }} ·
+        {% if result.transcript_is_generated %}subtítulo automático{% else %}subtítulo manual{% endif %} ·
+        salida: {{ result.output_style_label }}
+      </div>
+    </div>
+    <div style="padding:10px 12px; border:1px solid var(--border); border-radius: 12px; background:#0d1427; min-width: 220px;">
+      <div style="font-size:0.9rem; color: var(--muted);">Estado IA</div>
+      <div style="margin-top:6px; line-height:1.45;">{{ result.ai_status }}</div>
+    </div>
+  </div>
+
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+    <section style="border:1px solid var(--border); border-radius:16px; padding:16px; background:#0d1427;">
+      <h2 style="margin-top:0;">Resumen</h2>
+      <p style="line-height:1.65; white-space:pre-wrap;">{{ result.summary|safe }}</p>
+    </section>
+
+    <section style="border:1px solid var(--border); border-radius:16px; padding:16px; background:#0d1427;">
+      <h2 style="margin-top:0;">Puntos importantes</h2>
+      {% if result.key_points.len() == 0 %}
+        <p style="color: var(--muted);">No se pudieron detectar puntos importantes estructurados.</p>
+      {% else %}
+        <ul style="margin:0; padding-left: 18px; line-height:1.65;">
+          {% for item in result.key_points %}
+            <li>{{ item|safe }}</li>
+          {% endfor %}
+        </ul>
+      {% endif %}
+    </section>
+  </div>
+
+  <section style="border:1px solid var(--border); border-radius:16px; padding:16px; background:#0d1427; display:grid; gap: 12px;">
+    <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:center;">
+      <h2 style="margin:0;">Texto listo para pegar en chat</h2>
+      <div style="display:flex; gap:10px; flex-wrap:wrap;">
+        <button type="button" class="secondary" onclick="copyShareText()">Copiar</button>
+        <button type="button" class="primary" onclick="shareResult()">Compartir</button>
+      </div>
+    </div>
+    <textarea id="share-text" readonly style="width:100%; min-height: 190px; resize: vertical; border:1px solid var(--border); background:#08101f; color:var(--text); border-radius:12px; padding:14px; font: inherit;">{{ result.share_text|safe }}</textarea>
+  </section>
+
+  <section style="border:1px solid var(--border); border-radius:16px; padding:16px; background:#0d1427; display:grid; gap:10px;">
+    <div style="display:flex; justify-content:space-between; gap:16px; flex-wrap:wrap; align-items:center;">
+      <h2 style="margin:0;">Transcripción completa</h2>
+      <span style="color: var(--muted); font-size: 0.92rem;">{{ result.transcript_char_count }} caracteres</span>
+    </div>
+    <textarea readonly style="width:100%; min-height: 360px; resize: vertical; border:1px solid var(--border); background:#08101f; color:var(--text); border-radius:12px; padding:14px; font: inherit;">{{ result.transcript_text|safe }}</textarea>
+  </section>
+</div>

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ClipTube AI — Web</title>
+  <meta name="description" content="ClipTube AI web — turn YouTube videos into transcripts, summaries and shareable insights using your local Ollama." />
+  <meta name="theme-color" content="#0f1526" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="../">
+      <img src="../assets/icon.svg" alt="ClipTube AI logo" />
+      <span class="brand-name">ClipTube AI</span>
+    </a>
+    <div class="topbar-right">
+      <a class="web-badge topbar-web-badge" href="../" aria-label="ClipTube AI site">WEB</a>
+      <button id="btn-install" class="btn-secondary install-btn" hidden data-i18n="btnInstall">Install app</button>
+      <button id="btn-settings" class="icon-btn" title="Configuración Ollama">⚙️</button>
+      <div id="ollama-status" class="status-dot" title="Desconectado"></div>
+      <div class="lang-switch">
+        <label class="lang-select-label" for="lang-select">🌐</label>
+        <select id="lang-select" class="lang-select">
+          <option value="es">🇪🇸 Español</option>
+          <option value="en">🇺🇸 English</option>
+          <option value="pt">🇧🇷 Português</option>
+          <option value="fr">🇫🇷 Français</option>
+          <option value="de">🇩🇪 Deutsch</option>
+          <option value="ja">🇯🇵 日本語</option>
+          <option value="zh-Hans">🇨🇳 简体中文</option>
+          <option value="ru">🇷🇺 Русский</option>
+          <option value="ar">🇸🇦 العربية</option>
+          <option value="hi">🇮🇳 हिन्दी</option>
+        </select>
+      </div>
+    </div>
+  </header>
+
+  <section class="runtime-banner">
+    <div id="runtime-banner-icon" class="runtime-banner-icon" aria-hidden="true">📲</div>
+    <div class="runtime-banner-copy">
+      <div class="runtime-banner-head">
+        <strong id="runtime-banner-title" data-i18n="runtimeBannerTitle">Installable web app</strong>
+        <span id="runtime-mode-pill" class="runtime-pill" data-i18n="runtimePillRemote">Interface-only on static hosting</span>
+      </div>
+      <p id="runtime-banner-text" data-i18n="runtimeBannerRemote">Install the PWA for fast access and offline UI. For full transcript fetching and Ollama integration, run the local web runtime or point the transcript backend to it.</p>
+    </div>
+  </section>
+
+  <div id="settings-panel" class="settings-panel hidden">
+    <div class="settings-card">
+      <h3 data-i18n="settingsTitle">Conexión Ollama</h3>
+      <p class="settings-hint" data-i18n="settingsHint">Configura la URL de tu instancia Ollama local o remota. Por defecto: http://localhost:11434</p>
+      <div class="settings-row">
+        <label data-i18n="settingsHostPort">Host y puerto</label>
+        <div class="settings-inline-grid">
+          <input id="ollama-host" type="text" placeholder="127.0.0.1" />
+          <input id="ollama-port" type="text" placeholder="11434" />
+        </div>
+      </div>
+      <div class="settings-row">
+        <label for="ollama-url" data-i18n="settingsUrl">Endpoint completo (override)</label>
+        <input id="ollama-url" type="text" placeholder="http://localhost:11434/api/chat" />
+      </div>
+      <div class="settings-row">
+        <label for="cors-proxy" data-i18n="settingsProxy">Proxy CORS (transcripts)</label>
+        <input id="cors-proxy" type="text" placeholder="https://corsproxy.io/?" />
+      </div>
+      <div class="settings-row">
+        <label for="transcript-backend" data-i18n="settingsTranscriptBackend">Backend transcript (opcional)</label>
+        <input id="transcript-backend" type="text" placeholder="http://127.0.0.1:4174" />
+      </div>
+      <div class="settings-row">
+        <label data-i18n="settingsEffectiveUrl">URL efectiva</label>
+        <div id="effective-url" class="settings-note">http://127.0.0.1:11434</div>
+      </div>
+      <div class="settings-footer">
+        <div class="settings-actions">
+          <button id="btn-test-connection" class="btn-sm btn-cyan" data-i18n="settingsTest">Probar conexión</button>
+          <button id="btn-save-settings" class="btn-sm btn-pink" data-i18n="settingsSave">Guardar</button>
+        </div>
+        <div id="connection-result" class="connection-result"></div>
+      </div>
+    </div>
+  </div>
+
+  <main class="app-layout">
+    <section class="panel left-panel">
+      <div class="input-group">
+        <label class="label" data-i18n="urlLabel">URL o ID de YouTube</label>
+        <div class="url-row">
+          <input id="youtube-url" type="text" placeholder="https://youtube.com/watch?v=..." />
+          <button id="btn-fetch" class="btn-primary" data-i18n="btnFetch">Obtener</button>
+        </div>
+        <div id="fetch-status" class="status-text"></div>
+      </div>
+
+      <div class="input-group">
+        <label class="label" data-i18n="languagesLabel">Idiomas del transcript</label>
+        <input id="transcript-languages" class="text-input" type="text" placeholder="es,en" />
+      </div>
+
+      <div class="input-group">
+        <label class="label" data-i18n="modelLabel">Modelo</label>
+        <div class="model-row">
+          <select id="model-select" class="select-styled">
+            <option value="" data-i18n="modelDefault">Cargando modelos…</option>
+          </select>
+          <button id="btn-refresh-models" class="icon-btn" title="Refrescar modelos">🔄</button>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <label class="label" data-i18n="styleLabel">Estilo de salida</label>
+        <div class="style-row">
+          <button class="style-btn active" data-style="0" data-i18n="styleChat">Chat listo</button>
+          <button class="style-btn" data-style="1" data-i18n="styleExec">Resumen ejecutivo</button>
+          <button class="style-btn" data-style="2" data-i18n="styleBullets">Bullets directos</button>
+        </div>
+      </div>
+
+      <button id="btn-analyze" class="btn-analyze" disabled data-i18n="btnAnalyze">Generar resumen</button>
+
+      <div id="results" class="results hidden">
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-icon">📋</span>
+            <span class="card-title" data-i18n="metaTitle">Metadatos</span>
+          </div>
+          <pre id="result-meta" class="result-text"></pre>
+        </div>
+
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-icon">📝</span>
+            <span class="card-title" data-i18n="summaryTitle">Resumen</span>
+          </div>
+          <p id="result-summary" class="result-text"></p>
+        </div>
+
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-icon">🔑</span>
+            <span class="card-title" data-i18n="keyPointsTitle">Puntos clave</span>
+          </div>
+          <ul id="result-keypoints" class="result-list"></ul>
+        </div>
+
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-icon">💬</span>
+            <span class="card-title" data-i18n="transcriptTitle">Transcripción</span>
+            <button id="btn-toggle-transcript" class="btn-sm btn-ghost" data-i18n="btnShow">Mostrar</button>
+          </div>
+          <pre id="result-transcript" class="result-text collapsible collapsed"></pre>
+        </div>
+
+        <div class="result-card share-card">
+          <div class="card-header">
+            <span class="card-icon">✨</span>
+            <span class="card-title" data-i18n="shareTitle">Texto para compartir</span>
+            <button id="btn-copy-share" class="btn-sm btn-cyan" data-i18n="btnCopy">Copiar</button>
+          </div>
+          <pre id="result-share" class="result-text share-text"></pre>
+          <div id="copy-feedback" class="copy-feedback"></div>
+        </div>
+      </div>
+
+      <div id="loading" class="loading hidden">
+        <div class="spinner"></div>
+        <p id="loading-text" data-i18n="loading">Procesando…</p>
+      </div>
+    </section>
+
+    <section class="panel right-panel">
+      <div class="chat-header">
+        <span class="chat-icon">🧠</span>
+        <span data-i18n="chatTitle">Chat IA</span>
+        <span id="chat-model-name" class="chat-model-name"></span>
+      </div>
+
+      <div id="chat-messages" class="chat-messages">
+        <div class="chat-placeholder" data-i18n="chatPlaceholder">
+          Pregunta algo sobre el video. El chat usa tu Ollama local.
+        </div>
+      </div>
+
+      <div class="chat-composer">
+        <textarea id="chat-input" rows="3" placeholder="" data-i18n-placeholder="chatInput"></textarea>
+        <div class="composer-row">
+          <select id="chat-style" class="select-sm">
+            <option value="0" data-i18n="styleChat">Chat listo</option>
+            <option value="1" data-i18n="styleExec">Resumen ejecutivo</option>
+            <option value="2" data-i18n="styleBullets">Bullets directos</option>
+          </select>
+          <button id="btn-chat-send" class="btn-primary btn-send" data-i18n="btnSend">Enviar</button>
+          <button id="btn-chat-improve" class="btn-secondary" data-i18n="btnImprove">Mejorar texto final</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

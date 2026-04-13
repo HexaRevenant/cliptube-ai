@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YouTube Transcript + Resumen IA</title>
+    <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --panel: #131a2d;
+        --border: #27304a;
+        --muted: #93a0bd;
+        --text: #eef3ff;
+        --accent: #7c9cff;
+        --accent-2: #91f2c3;
+        --danger: #ff9a9a;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+        background: linear-gradient(180deg, #0b1020 0%, #0f172a 100%);
+        color: var(--text);
+      }
+      .container {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: 32px 20px 64px;
+      }
+      .hero {
+        margin-bottom: 24px;
+      }
+      .hero h1 {
+        margin: 0 0 10px;
+        font-size: clamp(2rem, 5vw, 3.2rem);
+      }
+      .hero p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 860px;
+        line-height: 1.6;
+      }
+      .panel {
+        background: rgba(19, 26, 45, 0.92);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        padding: 20px;
+        box-shadow: 0 18px 60px rgba(0,0,0,0.35);
+      }
+      form {
+        display: grid;
+        gap: 14px;
+      }
+      .grid {
+        display: grid;
+        gap: 14px;
+        grid-template-columns: 1.5fr 0.5fr;
+      }
+      label {
+        display: grid;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 0.95rem;
+      }
+      input {
+        width: 100%;
+        border: 1px solid var(--border);
+        background: #0d1427;
+        color: var(--text);
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 1rem;
+      }
+      button {
+        border: 0;
+        border-radius: 12px;
+        padding: 14px 18px;
+        font-size: 1rem;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .primary {
+        background: linear-gradient(135deg, var(--accent), #a26bff);
+        color: white;
+      }
+      .secondary {
+        background: #18223b;
+        color: var(--text);
+        border: 1px solid var(--border);
+      }
+      #result {
+        margin-top: 22px;
+      }
+      .loading {
+        display: none;
+        margin-top: 12px;
+        color: var(--muted);
+      }
+      .htmx-request .loading,
+      .htmx-request.loading {
+        display: block;
+      }
+      @media (max-width: 780px) {
+        .grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <section class="hero">
+        <h1>Resumen de videos de YouTube con Rust + HTMX</h1>
+        <p>
+          Pega una URL o un ID de YouTube. La app obtiene la transcripción completa,
+          crea un resumen automático, extrae puntos importantes y te deja copiar o compartir
+          un mensaje listo para enviar por chat.
+        </p>
+      </section>
+
+      <section class="panel">
+        <form
+          hx-post="/analyze"
+          hx-target="#result"
+          hx-swap="innerHTML"
+          hx-indicator="#loading"
+        >
+          <div class="grid">
+            <label>
+              URL o video ID
+              <input
+                type="text"
+                name="url"
+                placeholder="https://www.youtube.com/watch?v=..."
+                required
+              />
+            </label>
+            <label>
+              Idiomas
+              <input type="text" name="languages" value="es,en" />
+            </label>
+          </div>
+
+          <label>
+            Formato de salida
+            <div style="display:flex; gap:12px; flex-wrap:wrap;">
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text);">
+                <input type="radio" name="output_style" value="chat" checked style="width:auto;" />
+                Chat listo para pegar
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text);">
+                <input type="radio" name="output_style" value="executive" style="width:auto;" />
+                Resumen ejecutivo
+              </label>
+              <label style="display:flex; align-items:center; gap:8px; color:var(--text);">
+                <input type="radio" name="output_style" value="bullets" style="width:auto;" />
+                Bullets directos
+              </label>
+            </div>
+          </label>
+
+          <div style="display:flex; gap: 12px; flex-wrap: wrap; align-items:center;">
+            <button class="primary" type="submit">Obtener transcript y resumir</button>
+            <span id="loading" class="loading">Procesando video...</span>
+          </div>
+        </form>
+      </section>
+
+      <section id="result"></section>
+    </main>
+
+    <script>
+      async function copyShareText() {
+        const node = document.getElementById('share-text');
+        if (!node) return;
+        await navigator.clipboard.writeText(node.value);
+        alert('Texto copiado al portapapeles');
+      }
+
+      async function shareResult() {
+        const node = document.getElementById('share-text');
+        if (!node) return;
+        if (navigator.share) {
+          await navigator.share({ text: node.value });
+          return;
+        }
+        await copyShareText();
+      }
+    </script>
+  </body>
+</html>

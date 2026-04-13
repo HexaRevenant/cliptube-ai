@@ -1,0 +1,52 @@
+<svg width="1200" height="760" viewBox="0 0 1200 760" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="94" y1="46" x2="1108" y2="720" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#131127"/>
+      <stop offset="0.55" stop-color="#0B1120"/>
+      <stop offset="1" stop-color="#1A1023"/>
+    </linearGradient>
+    <radialGradient id="cyan" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(886 129) rotate(135.783) scale(250.44 144.382)">
+      <stop stop-color="#3DE0FF" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#3DE0FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="pink" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(268 611) rotate(-35.33) scale(311.625 193.251)">
+      <stop stop-color="#FF4D7A" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FF4D7A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="244" y1="118" x2="958" y2="622" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.04"/>
+    </linearGradient>
+    <linearGradient id="cta" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#FF5B76"/>
+      <stop offset="1" stop-color="#8E58FF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="760" rx="34" fill="#090E1A"/>
+  <rect x="26" y="26" width="1148" height="708" rx="30" fill="url(#bg)"/>
+  <circle cx="886" cy="129" r="240" fill="url(#cyan)"/>
+  <circle cx="268" cy="611" r="300" fill="url(#pink)"/>
+  <rect x="124" y="100" width="952" height="560" rx="32" fill="#0E1528" fill-opacity="0.92" stroke="url(#glass)" stroke-width="2"/>
+  <rect x="160" y="140" width="240" height="380" rx="24" fill="#10192F" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="196" y="186" width="104" height="16" rx="8" fill="#F5F7FF" fill-opacity="0.82"/>
+  <rect x="196" y="216" width="160" height="14" rx="7" fill="#94A3B8" fill-opacity="0.32"/>
+  <rect x="196" y="278" width="168" height="82" rx="20" fill="#111F3A"/>
+  <rect x="196" y="380" width="168" height="82" rx="20" fill="#111F3A"/>
+  <rect x="440" y="140" width="600" height="92" rx="26" fill="#0F1830" stroke="rgba(255,255,255,0.09)"/>
+  <rect x="480" y="170" width="224" height="18" rx="9" fill="#F5F7FF" fill-opacity="0.9"/>
+  <rect x="480" y="198" width="320" height="14" rx="7" fill="#94A3B8" fill-opacity="0.34"/>
+  <rect x="820" y="164" width="180" height="44" rx="22" fill="url(#cta)"/>
+  <rect x="440" y="258" width="286" height="170" rx="28" fill="#111A30" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="754" y="258" width="286" height="170" rx="28" fill="#111A30" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="440" y="456" width="600" height="170" rx="28" fill="#111A30" stroke="rgba(255,255,255,0.08)"/>
+  <rect x="474" y="292" width="180" height="18" rx="9" fill="#F5F7FF" fill-opacity="0.86"/>
+  <rect x="474" y="324" width="210" height="14" rx="7" fill="#94A3B8" fill-opacity="0.34"/>
+  <rect x="474" y="352" width="176" height="14" rx="7" fill="#94A3B8" fill-opacity="0.24"/>
+  <rect x="788" y="292" width="180" height="18" rx="9" fill="#F5F7FF" fill-opacity="0.86"/>
+  <rect x="788" y="324" width="210" height="14" rx="7" fill="#94A3B8" fill-opacity="0.34"/>
+  <rect x="788" y="352" width="176" height="14" rx="7" fill="#94A3B8" fill-opacity="0.24"/>
+  <rect x="474" y="490" width="214" height="18" rx="9" fill="#F5F7FF" fill-opacity="0.86"/>
+  <rect x="474" y="524" width="496" height="16" rx="8" fill="#94A3B8" fill-opacity="0.30"/>
+  <rect x="474" y="554" width="430" height="16" rx="8" fill="#94A3B8" fill-opacity="0.20"/>
+  <rect x="474" y="584" width="340" height="16" rx="8" fill="#94A3B8" fill-opacity="0.14"/>
+</svg>

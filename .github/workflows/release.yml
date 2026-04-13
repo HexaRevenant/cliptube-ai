@@ -1,0 +1,153 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux AppImage
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install image tools
+        run: sudo apt-get update && sudo apt-get install -y imagemagick
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Prepare AppDir
+        run: |
+          mkdir -p dist/AppDir/usr/bin dist/AppDir/usr/share/applications dist/AppDir/usr/share/metainfo
+          cp target/release/cliptube-ai dist/AppDir/usr/bin/cliptube-ai
+          cat > dist/AppDir/usr/share/applications/io.github.cliptubeai.ClipTubeAI.desktop <<'DESKTOP'
+          [Desktop Entry]
+          Version=1.0
+          Type=Application
+          Name=ClipTube AI
+          Comment=AI-powered YouTube transcript, summary and chat assistant
+          Exec=cliptube-ai
+          Icon=io.github.cliptubeai.ClipTubeAI
+          Terminal=false
+          Categories=AudioVideo;Utility;
+          Keywords=cliptube;youtube;transcript;summary;chat;ollama;rust;
+          StartupNotify=true
+          DESKTOP
+          cat > dist/AppDir/AppRun <<'SH'
+          #!/bin/sh
+          HERE="$(dirname "$(readlink -f "$0")")"
+          exec "$HERE/usr/bin/cliptube-ai" "$@"
+          SH
+          chmod +x dist/AppDir/AppRun
+          magick assets/icon.svg -resize 512x512 dist/AppDir/io.github.cliptubeai.ClipTubeAI.png
+          cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/cliptube-ai.png
+          cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/.DirIcon
+          cp dist/AppDir/usr/share/applications/io.github.cliptubeai.ClipTubeAI.desktop dist/AppDir/io.github.cliptubeai.ClipTubeAI.desktop
+          cat > dist/AppDir/usr/share/metainfo/io.github.cliptubeai.ClipTubeAI.appdata.xml <<'XML'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <component type="desktop-application">
+            <id>io.github.cliptubeai.ClipTubeAI</id>
+            <name>ClipTube AI</name>
+            <summary>AI-powered YouTube transcript, summary and chat assistant</summary>
+            <metadata_license>MIT</metadata_license>
+            <project_license>MIT</project_license>
+            <description>
+              <p>ClipTube AI turns YouTube videos into transcripts, summaries, key points and ready-to-share text.</p>
+            </description>
+            <launchable type="desktop-id">io.github.cliptubeai.ClipTubeAI.desktop</launchable>
+            <provides>
+              <binary>cliptube-ai</binary>
+            </provides>
+            <url type="homepage">${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}</url>
+          </component>
+          XML
+
+      - name: Download appimagetool
+        run: |
+          mkdir -p tools
+          curl -L https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage -o tools/appimagetool.AppImage
+          chmod +x tools/appimagetool.AppImage
+
+      - name: Build AppImage
+        run: APPIMAGE_EXTRACT_AND_RUN=1 ./tools/appimagetool.AppImage dist/AppDir dist/cliptube-ai-linux-x86_64.AppImage
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/cliptube-ai-linux-x86_64.AppImage
+            assets/icon.svg
+            assets/icon.ico
+            assets/icon.icns
+          generate_release_notes: true
+
+  build-macos:
+    name: Build macOS app bundle
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Build .app bundle
+        run: bash packaging/macos/create-app-bundle.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Build DMG
+        run: bash packaging/macos/create-dmg.sh
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/macos/cliptube-ai-macos-app.zip
+            dist/macos/cliptube-ai-macos.dmg
+          generate_release_notes: true
+
+  build-windows:
+    name: Build Windows package
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build release
+        run: cargo build --release
+
+      - name: Package zip
+        shell: pwsh
+        run: ./packaging/windows/package.ps1 -Version "${env:GITHUB_REF_NAME}".TrimStart('v')
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/windows/cliptube-ai-windows-x86_64.zip
+          generate_release_notes: true

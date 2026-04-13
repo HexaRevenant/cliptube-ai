@@ -1,0 +1,81 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="48" y1="32" x2="448" y2="480" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1A1634"/>
+      <stop offset="0.55" stop-color="#111728"/>
+      <stop offset="1" stop-color="#2A1120"/>
+    </linearGradient>
+    <radialGradient id="glowPurple" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(174 126) rotate(37.8) scale(180 132)">
+      <stop stop-color="#745CFF" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="#745CFF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowCyan" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(372 110) rotate(140) scale(174 126)">
+      <stop stop-color="#37D4FF" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#37D4FF" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowPink" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(374 392) rotate(-138) scale(188 150)">
+      <stop stop-color="#FF4C76" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FF4C76" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="cardStroke" x1="88" y1="84" x2="424" y2="428" gradientUnits="userSpaceOnUse">
+      <stop stop-color="white" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="white" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="button" x1="148" y1="170" x2="364" y2="292" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FF5D72"/>
+      <stop offset="0.45" stop-color="#FF3B73"/>
+      <stop offset="1" stop-color="#D42679"/>
+    </linearGradient>
+    <filter id="cardShadow" x="54" y="54" width="404" height="410" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"/>
+      <feOffset dy="8"/>
+      <feGaussianBlur stdDeviation="16"/>
+      <feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.38 0"/>
+      <feBlend mode="normal" in2="BackgroundImageFix" result="effect1_dropShadow_1_1"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="effect1_dropShadow_1_1" result="shape"/>
+    </filter>
+    <filter id="buttonGlow" x="138" y="160" width="236" height="142" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="3" result="effect1_foregroundBlur_1_1"/>
+    </filter>
+    <filter id="badgeGlow" x="304" y="100" width="118" height="118" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feFlood flood-opacity="0" result="BackgroundImageFix"/>
+      <feBlend mode="normal" in="SourceGraphic" in2="BackgroundImageFix" result="shape"/>
+      <feGaussianBlur stdDeviation="7" result="effect1_foregroundBlur_1_1"/>
+    </filter>
+  </defs>
+
+  <rect x="18" y="18" width="476" height="476" rx="120" fill="url(#bg)"/>
+  <rect x="18" y="18" width="476" height="476" rx="120" stroke="white" stroke-opacity="0.1" stroke-width="3"/>
+
+  <circle cx="174" cy="126" r="180" fill="url(#glowPurple)"/>
+  <circle cx="372" cy="110" r="174" fill="url(#glowCyan)"/>
+  <circle cx="374" cy="392" r="188" fill="url(#glowPink)"/>
+
+  <g filter="url(#cardShadow)">
+    <rect x="88" y="84" width="336" height="344" rx="88" fill="#111422" fill-opacity="0.94"/>
+    <rect x="88.75" y="84.75" width="334.5" height="342.5" rx="87.25" stroke="url(#cardStroke)" stroke-width="1.5"/>
+    <rect x="100.75" y="96.75" width="310.5" height="318.5" rx="75.25" stroke="white" stroke-opacity="0.08" stroke-width="1.5"/>
+  </g>
+
+  <rect x="126" y="118" width="52" height="18" rx="9" fill="white" fill-opacity="0.84"/>
+  <rect x="188" y="118" width="52" height="18" rx="9" fill="white" fill-opacity="0.48"/>
+
+  <g filter="url(#buttonGlow)">
+    <rect x="148" y="170" width="216" height="122" rx="46" fill="url(#button)"/>
+    <rect x="154" y="176" width="204" height="110" rx="40" stroke="#FF6B7B" stroke-opacity="0.92" stroke-width="3"/>
+  </g>
+  <rect x="164" y="184" width="184" height="96" rx="34" fill="#E12279" fill-opacity="0.35"/>
+  <path d="M232 198V264L289 231L232 198Z" fill="white"/>
+
+  <g filter="url(#badgeGlow)">
+    <circle cx="363" cy="159" r="37" fill="#6DEFFF"/>
+  </g>
+  <path d="M363 135L369.219 152.781L387 159L369.219 165.219L363 183L356.781 165.219L339 159L356.781 152.781L363 135Z" fill="#182130"/>
+
+  <rect x="146" y="334" width="210" height="14" rx="7" fill="white" fill-opacity="0.82"/>
+  <rect x="146" y="364" width="170" height="14" rx="7" fill="white" fill-opacity="0.72"/>
+  <rect x="146" y="392" width="128" height="14" rx="7" fill="white" fill-opacity="0.58"/>
+</svg>

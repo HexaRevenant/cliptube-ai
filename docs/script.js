@@ -1,9 +1,13 @@
 const repoUrl = 'https://github.com/HexaRevenant/cliptube-ai';
 const releasesUrl = `${repoUrl}/releases/latest`;
 const licenseUrl = `${repoUrl}/blob/main/LICENSE`;
+const siteUrl = 'https://hexarevenant.github.io/cliptube-ai/';
+const defaultOgImage = `${siteUrl}assets/screenshots/app-preview-en.png`;
 
 const translations = {
   en: {
+    seoTitle: 'ClipTube AI — YouTube transcripts, summaries and AI chat',
+    seoDescription: 'ClipTube AI is a native Rust desktop app for YouTube transcripts, summaries, key points, AI chat and shareable text powered by Ollama-compatible runtimes.',
     navFeatures: 'Features',
     navWorkflow: 'How it works',
     navDownloads: 'Downloads',
@@ -60,6 +64,8 @@ const translations = {
     footerGithub: 'GitHub', footerReleases: 'Releases', footerLicense: 'License', footerNote: 'ClipTube AI. Built for fast understanding and reuse.'
   },
   es: {
+    seoTitle: 'ClipTube AI — transcripciones de YouTube, resúmenes y chat con IA',
+    seoDescription: 'ClipTube AI es una app de escritorio nativa en Rust para obtener transcripciones de YouTube, crear resúmenes, extraer puntos clave y generar texto reutilizable con runtimes compatibles con Ollama.',
     navFeatures: 'Funciones', navWorkflow: 'Cómo funciona', navDownloads: 'Descargas', navWebApp: 'App web', navFaq: 'FAQ',
     heroEyebrow: 'App nativa · Rust + Ollama · Linux / macOS / Windows',
     heroTitle: 'Convierte videos largos de YouTube en inteligencia reutilizable.',
@@ -582,6 +588,30 @@ function applyLanguage(lang) {
 
   localStorage.setItem('cliptube-language', lang);
   setPreviewImages(lang);
+  updateSeoMeta(dict, lang);
+}
+
+function setMetaContent(selector, value) {
+  const node = document.querySelector(selector);
+  if (node && value) node.setAttribute('content', value);
+}
+
+function updateSeoMeta(dict, lang) {
+  const fallback = translations.en;
+  const title = dict.seoTitle || fallback.seoTitle || document.title;
+  const description = dict.seoDescription || fallback.seoDescription;
+  const ogLocale = lang === 'es' ? 'es_ES' : 'en_US';
+
+  document.title = title;
+  setMetaContent('meta[name="description"]', description);
+  setMetaContent('meta[property="og:title"]', title);
+  setMetaContent('meta[property="og:description"]', description);
+  setMetaContent('meta[property="og:url"]', siteUrl);
+  setMetaContent('meta[property="og:image"]', defaultOgImage);
+  setMetaContent('meta[property="og:locale"]', ogLocale);
+  setMetaContent('meta[name="twitter:title"]', title);
+  setMetaContent('meta[name="twitter:description"]', description);
+  setMetaContent('meta[name="twitter:image"]', defaultOgImage);
 }
 
 for (const link of document.querySelectorAll('[data-repo-link]')) {

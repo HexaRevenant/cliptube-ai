@@ -3,17 +3,93 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
+    <meta name="theme-color" content="#111728" />
+    <meta name="application-name" content="ClipTube AI" />
+    <meta name="apple-mobile-web-app-title" content="ClipTube AI" />
     <title>ClipTube AI — Turn YouTube into transcripts, summaries and shareable insights</title>
     <meta name="description" content="ClipTube AI is a native Rust desktop app that turns YouTube videos into transcripts, summaries, key points and ready-to-share text." />
-    <meta property="og:title" content="ClipTube AI" />
-    <meta property="og:description" content="Native desktop app for transcripts, summaries, AI chat and reusable content from YouTube videos." />
+    <meta name="keywords" content="YouTube transcript app, YouTube summarizer, Ollama desktop app, AI video summary, transcript to notes, YouTube summary app, Rust desktop app" />
+    <link rel="canonical" href="https://hexarevenant.github.io/cliptube-ai/" />
+    <meta property="og:title" content="ClipTube AI — YouTube transcripts, summaries and AI chat" />
+    <meta property="og:description" content="Native Rust desktop app for YouTube transcripts, summaries, key points, AI chat and shareable text with Ollama." />
     <meta property="og:type" content="website" />
-    <meta property="og:image" content="assets/screenshots/app-preview-en.png" />
+    <meta property="og:url" content="https://hexarevenant.github.io/cliptube-ai/" />
+    <meta property="og:site_name" content="ClipTube AI" />
+    <meta property="og:image" content="https://hexarevenant.github.io/cliptube-ai/assets/screenshots/app-preview-en.png" />
+    <meta property="og:image:alt" content="ClipTube AI desktop interface showing YouTube transcript, summary, key points and AI chat." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="ClipTube AI — YouTube transcripts, summaries and AI chat" />
+    <meta name="twitter:description" content="Turn YouTube videos into transcripts, summaries, key points and shareable insights with a native Rust desktop app." />
+    <meta name="twitter:image" content="https://hexarevenant.github.io/cliptube-ai/assets/screenshots/app-preview-en.png" />
     <link rel="icon" type="image/svg+xml" href="assets/favicon.svg" />
+    <link rel="sitemap" type="application/xml" href="sitemap.xml" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "ClipTube AI",
+        "applicationCategory": "ProductivityApplication",
+        "operatingSystem": "Linux, macOS, Windows",
+        "description": "ClipTube AI is a native Rust desktop app for YouTube transcripts, summaries, key points, AI chat and shareable text powered by Ollama-compatible runtimes.",
+        "url": "https://hexarevenant.github.io/cliptube-ai/",
+        "downloadUrl": "https://github.com/HexaRevenant/cliptube-ai/releases/latest",
+        "image": "https://hexarevenant.github.io/cliptube-ai/assets/screenshots/app-preview-en.png",
+        "author": {
+          "@type": "Person",
+          "name": "HexaRevenant"
+        },
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        }
+      }
+    </script>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "Does ClipTube AI need internet?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "You need internet to access YouTube content. The AI model side is designed around Ollama, so summarization and chat can run with your local setup."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does it work with Ollama locally?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. ClipTube AI can list models directly from your local Ollama instance and use them for summaries and chat."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it available for Linux, macOS and Windows?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. The project is prepared to publish Linux AppImage, macOS DMG and app bundle, and Windows ZIP and EXE packages."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Is it open source?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Yes. The repository, release automation, packaging and assets are shared publicly through GitHub."
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div class="site-shell">
@@ -71,7 +147,7 @@
             <div class="floating-badge badge-cyan" data-i18n="heroBadge1">AI chat</div>
             <div class="floating-badge badge-pink" data-i18n="heroBadge2">Ready to share</div>
             <div class="app-frame">
-              <img data-preview-image src="assets/screenshots/app-preview-en.png" alt="" />
+              <img data-preview-image src="assets/screenshots/app-preview-en.png" alt="ClipTube AI app preview with transcript, summary, key points and AI chat." />
             </div>
           </div>
         </section>

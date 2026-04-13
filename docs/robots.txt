@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://hexarevenant.github.io/cliptube-ai/sitemap.xml

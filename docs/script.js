@@ -64,7 +64,7 @@ const translations = {
     heroEyebrow: 'App nativa · Rust + Ollama · Linux / macOS / Windows',
     heroTitle: 'Convierte videos largos de YouTube en inteligencia reutilizable.',
     heroText: 'ClipTube AI extrae transcripciones, crea resúmenes, detecta puntos clave, te da un chat contextual con IA y transforma el conocimiento del video en texto listo para copiar, refinar y compartir.',
-    downloadBtn: 'Descargar', webAppBtn: 'Abrir app web', localRuntimeBtn: 'Abrir runtime local', localRuntimeBtn: 'Abrir runtime local', githubBtn: 'Ver en GitHub',
+    downloadBtn: 'Descargar', webAppBtn: 'Abrir app web', localRuntimeBtn: 'Abrir runtime local', githubBtn: 'Ver en GitHub',
     heroMeta1: 'Pensado para creadores', heroMeta2: 'Estudiantes', heroMeta3: 'Investigadores', heroMeta4: 'Fans de la productividad',
     heroBadge1: 'Chat IA', heroBadge2: 'Listo para compartir',
     metric1Title: 'Transcripción completa', metric1Text: 'Obtén el texto del video y trabaja desde la fuente.',

@@ -2,7 +2,7 @@ const repoUrl = 'https://github.com/HexaRevenant/cliptube-ai';
 const releasesUrl = `${repoUrl}/releases/latest`;
 const licenseUrl = `${repoUrl}/blob/main/LICENSE`;
 const siteUrl = 'https://hexarevenant.github.io/cliptube-ai/';
-const defaultOgImage = `${siteUrl}assets/screenshots/app-preview-en.png`;
+const defaultOgImage = `${siteUrl}assets/og-image.png`;
 
 const translations = {
   en: {

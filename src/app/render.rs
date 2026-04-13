@@ -10,8 +10,16 @@ impl App for YoutubeNativeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         self.handle_background_messages();
 
+        if self.copy_feedback_started_at.is_some() && !self.copy_feedback_active() {
+            self.copy_feedback_started_at = None;
+        }
+
         if self.busy {
             ctx.request_repaint();
+        }
+
+        if self.copy_feedback_active() {
+            ctx.request_repaint_after(Duration::from_millis(16));
         }
     }
 

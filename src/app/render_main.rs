@@ -210,7 +210,36 @@ impl YoutubeNativeApp {
                         if ui
                             .add_enabled(
                                 !self.busy && !self.share_text.is_empty(),
-                                secondary_button(self.ui_language.text("copy_final")),
+                                {
+                                    let copy_button = if let Some(progress) =
+                                        self.copy_feedback_progress()
+                                    {
+                                        let pulse = 1.0 - progress;
+                                        let fill = egui::lerp(
+                                            egui::Rgba::from(BrandColors::CYAN)
+                                                ..=egui::Rgba::from(BrandColors::VIOLET),
+                                            pulse.clamp(0.0, 1.0),
+                                        );
+                                        egui::Button::new(
+                                            egui::RichText::new(format!(
+                                                "✅ {}",
+                                                self.ui_language.text("copy_final")
+                                            ))
+                                            .strong(),
+                                        )
+                                        .fill(fill)
+                                        .stroke(egui::Stroke::new(
+                                            1.0 + (pulse * 1.5),
+                                            BrandColors::line_strong(),
+                                        ))
+                                        .corner_radius(egui::CornerRadius::same(
+                                            LayoutSpace::INPUT_RADIUS,
+                                        ))
+                                    } else {
+                                        secondary_button(self.ui_language.text("copy_final"))
+                                    };
+                                    copy_button
+                                },
                             )
                             .clicked()
                         {

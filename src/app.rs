@@ -6,7 +6,10 @@ mod render_main;
 mod render_topbar;
 mod view_model;
 
-use std::sync::Arc;
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use eframe::egui;
 use serde::{Deserialize, Serialize};
@@ -24,6 +27,7 @@ use self::{
 };
 
 const APP_SETTINGS_KEY: &str = "cliptube_app_settings";
+const COPY_FEEDBACK_DURATION: Duration = Duration::from_millis(1400);
 
 #[derive(Clone)]
 struct AppState {
@@ -100,6 +104,7 @@ pub struct YoutubeNativeApp {
     ollama_endpoint_override: String,
     chat_messages: Vec<ChatMessage>,
     brand_logo: egui::TextureHandle,
+    copy_feedback_started_at: Option<Instant>,
 }
 impl YoutubeNativeApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -184,6 +189,7 @@ impl YoutubeNativeApp {
                 load_embedded_svg_color_image(),
                 egui::TextureOptions::LINEAR,
             ),
+            copy_feedback_started_at: None,
         }
         .with_initial_model_refresh()
     }
@@ -191,5 +197,19 @@ impl YoutubeNativeApp {
     fn with_initial_model_refresh(mut self) -> Self {
         self.refresh_models();
         self
+    }
+
+    pub(super) fn copy_feedback_progress(&self) -> Option<f32> {
+        let started_at = self.copy_feedback_started_at?;
+        let elapsed = started_at.elapsed();
+        if elapsed >= COPY_FEEDBACK_DURATION {
+            None
+        } else {
+            Some(elapsed.as_secs_f32() / COPY_FEEDBACK_DURATION.as_secs_f32())
+        }
+    }
+
+    pub(super) fn copy_feedback_active(&self) -> bool {
+        self.copy_feedback_progress().is_some()
     }
 }

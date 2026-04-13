@@ -6,18 +6,27 @@ APP_NAME="ClipTube AI"
 BUNDLE_ID="io.github.cliptubeai.ClipTubeAI"
 BIN_NAME="cliptube-ai"
 VERSION="${1:-0.1.0}"
-BUILD_DIR="${ROOT_DIR}/target/release"
 DIST_DIR="${ROOT_DIR}/dist/macos"
-APP_DIR="${DIST_DIR}/${APP_NAME}.app"
+ARCH_SUFFIX="${2:-}"
+BIN_PATH="${3:-${ROOT_DIR}/target/release/${BIN_NAME}}"
+OUTPUT_STEM="cliptube-ai-macos"
+
+if [[ -n "${ARCH_SUFFIX}" ]]; then
+  APP_DIR="${DIST_DIR}/${APP_NAME} (${ARCH_SUFFIX}).app"
+  ZIP_NAME="${OUTPUT_STEM}-${ARCH_SUFFIX}-app.zip"
+else
+  APP_DIR="${DIST_DIR}/${APP_NAME}.app"
+  ZIP_NAME="${OUTPUT_STEM}-app.zip"
+fi
+
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
-ZIP_NAME="cliptube-ai-macos-app.zip"
 
 rm -rf "${APP_DIR}"
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-cp "${BUILD_DIR}/${BIN_NAME}" "${MACOS_DIR}/${BIN_NAME}"
+cp "${BIN_PATH}" "${MACOS_DIR}/${BIN_NAME}"
 chmod +x "${MACOS_DIR}/${BIN_NAME}"
 cp "${ROOT_DIR}/assets/icon.icns" "${RESOURCES_DIR}/icon.icns"
 

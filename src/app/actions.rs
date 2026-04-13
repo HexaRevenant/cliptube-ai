@@ -313,7 +313,10 @@ impl YoutubeNativeApp {
     pub(super) fn copy_share_text(&mut self) {
         match Clipboard::new() {
             Ok(mut cb) => match cb.set_text(self.share_text.clone()) {
-                Ok(()) => self.status_text = self.ui_language.text("clipboard_ok").into(),
+                Ok(()) => {
+                    self.status_text = self.ui_language.text("clipboard_ok").into();
+                    self.copy_feedback_started_at = Some(Instant::now());
+                }
                 Err(err) => self.status_text = format!("No pude copiar al portapapeles: {err}"),
             },
             Err(err) => {

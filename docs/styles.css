@@ -489,3 +489,5 @@ section[id] {
 }
 .setup-note strong { display:block; margin-bottom:10px; font-family: 'Sora', sans-serif; font-size: 1.02rem; }
 .setup-note p { margin:0; color: var(--muted); line-height:1.8; max-width: 58ch; }
+
+.download-actions { display:flex; gap:12px; flex-wrap:wrap; margin-top:18px; }

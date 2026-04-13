@@ -76,7 +76,15 @@ cargo run --release
 ### 🌐 Website
 
 A GitHub Pages landing is prepared under `docs/` and can be deployed with the `Pages` workflow.
-Update the repository URL placeholders in `docs/script.js` before publishing.
+The repository URLs are already wired to the public GitHub repository in `docs/script.js`.
+
+The landing now also includes:
+
+- `robots.txt`
+- `sitemap.xml`
+- Open Graph / Twitter metadata
+- structured data (`SoftwareApplication` + `FAQPage`)
+- a dedicated social preview image at `docs/assets/og-image.png`
 
 ### 🖼 Localized screenshots
 
@@ -112,11 +120,20 @@ This repository includes GitHub Actions workflows for:
 
 - ✅ CI on **Linux / macOS / Windows**
 - 📦 Release builds on tags like `v1.0.0`
-- 🐧 Linux: AppImage
-- 🍎 macOS: drag-and-drop `.dmg` + `.app` bundle ZIP
-- 🪟 Windows: ZIP package with `cliptube-ai.exe` and native icon files
+- 🐧 Linux: AppImage + versioned `.tar.gz`
+- 🍎 macOS: Intel, Apple Silicon and Universal builds (`.dmg` + `.app` ZIP)
+- 🪟 Windows: ZIP package with `cliptube-ai.exe` and embedded icon resources
 
 Artifacts are generated automatically when pushing tags starting with `v`.
+
+### 🐧 Linux AppImage note
+
+On Ubuntu and some other Linux desktops, downloaded AppImages usually need executable permission before the first launch:
+
+```bash
+chmod +x cliptube-ai-linux-x86_64.AppImage
+./cliptube-ai-linux-x86_64.AppImage
+```
 
 ### 📄 License
 
@@ -183,7 +200,15 @@ cargo run --release
 ### 🌐 Sitio web
 
 Hay una landing para GitHub Pages preparada en `docs/` y se puede publicar con el workflow `Pages`.
-Antes de publicarla, actualiza los placeholders de URL del repositorio en `docs/script.js`.
+Las URLs del repositorio ya están conectadas al repo público en `docs/script.js`.
+
+La landing ahora también incluye:
+
+- `robots.txt`
+- `sitemap.xml`
+- metadata Open Graph / Twitter
+- structured data (`SoftwareApplication` + `FAQPage`)
+- imagen social dedicada en `docs/assets/og-image.png`
 
 ### 🖼 Capturas localizadas
 
@@ -219,11 +244,20 @@ Este repositorio incluye GitHub Actions para:
 
 - ✅ CI en **Linux / macOS / Windows**
 - 📦 Builds de release con tags como `v1.0.0`
-- 🐧 Linux: AppImage
-- 🍎 macOS: `.dmg` arrastrable + bundle `.app` en ZIP
-- 🪟 Windows: ZIP con `cliptube-ai.exe` e iconos nativos
+- 🐧 Linux: AppImage + `.tar.gz` versionado
+- 🍎 macOS: builds Intel, Apple Silicon y Universal (`.dmg` + bundle `.app` en ZIP)
+- 🪟 Windows: ZIP con `cliptube-ai.exe` e icono incrustado
 
 Los artefactos se generan automáticamente al subir tags que empiezan con `v`.
+
+### 🐧 Nota sobre AppImage en Linux
+
+En Ubuntu y otros escritorios Linux, los AppImage descargados suelen necesitar permiso de ejecución antes del primer inicio:
+
+```bash
+chmod +x cliptube-ai-linux-x86_64.AppImage
+./cliptube-ai-linux-x86_64.AppImage
+```
 
 ### 📄 Licencia
 
@@ -290,7 +324,15 @@ cargo run --release
 ### 🌐 Website
 
 Há uma landing para GitHub Pages preparada em `docs/` e ela pode ser publicada com o workflow `Pages`.
-Antes de publicar, atualize os placeholders da URL do repositório em `docs/script.js`.
+As URLs do repositório já estão ligadas ao repositório público em `docs/script.js`.
+
+A landing agora também inclui:
+
+- `robots.txt`
+- `sitemap.xml`
+- metadata Open Graph / Twitter
+- structured data (`SoftwareApplication` + `FAQPage`)
+- imagem social dedicada em `docs/assets/og-image.png`
 
 ### 🖼 Capturas localizadas
 
@@ -326,11 +368,20 @@ Este repositório inclui GitHub Actions para:
 
 - ✅ CI em **Linux / macOS / Windows**
 - 📦 Builds de release com tags como `v1.0.0`
-- 🐧 Linux: AppImage
-- 🍎 macOS: `.dmg` arrastável + bundle `.app` em ZIP
-- 🪟 Windows: ZIP com `cliptube-ai.exe` e ícones nativos
+- 🐧 Linux: AppImage + `.tar.gz` versionado
+- 🍎 macOS: builds Intel, Apple Silicon e Universal (`.dmg` + bundle `.app` em ZIP)
+- 🪟 Windows: ZIP com `cliptube-ai.exe` e ícone embutido
 
 Os artefatos são gerados automaticamente ao enviar tags que começam com `v`.
+
+### 🐧 Nota sobre AppImage no Linux
+
+No Ubuntu e em outros desktops Linux, AppImages baixados normalmente precisam de permissão de execução antes do primeiro uso:
+
+```bash
+chmod +x cliptube-ai-linux-x86_64.AppImage
+./cliptube-ai-linux-x86_64.AppImage
+```
 
 ### 📄 Licença
 

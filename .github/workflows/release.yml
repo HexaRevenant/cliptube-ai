@@ -33,7 +33,12 @@ jobs:
 
       - name: Prepare AppDir
         run: |
-          mkdir -p dist/AppDir/usr/bin dist/AppDir/usr/share/applications dist/AppDir/usr/share/metainfo
+          mkdir -p \
+            dist/AppDir/usr/bin \
+            dist/AppDir/usr/share/applications \
+            dist/AppDir/usr/share/metainfo \
+            dist/AppDir/usr/share/icons/hicolor/512x512/apps \
+            dist/AppDir/usr/share/icons/hicolor/scalable/apps
           cp target/release/cliptube-ai dist/AppDir/usr/bin/cliptube-ai
           cat > dist/AppDir/usr/share/applications/io.github.cliptubeai.ClipTubeAI.desktop <<'DESKTOP'
           [Desktop Entry]
@@ -57,6 +62,10 @@ jobs:
           magick assets/icon.svg -resize 512x512 dist/AppDir/io.github.cliptubeai.ClipTubeAI.png
           cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/cliptube-ai.png
           cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/.DirIcon
+          cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/usr/share/icons/hicolor/512x512/apps/io.github.cliptubeai.ClipTubeAI.png
+          cp dist/AppDir/io.github.cliptubeai.ClipTubeAI.png dist/AppDir/usr/share/icons/hicolor/512x512/apps/cliptube-ai.png
+          cp assets/icon.svg dist/AppDir/usr/share/icons/hicolor/scalable/apps/io.github.cliptubeai.ClipTubeAI.svg
+          cp assets/icon.svg dist/AppDir/usr/share/icons/hicolor/scalable/apps/cliptube-ai.svg
           cp dist/AppDir/usr/share/applications/io.github.cliptubeai.ClipTubeAI.desktop dist/AppDir/io.github.cliptubeai.ClipTubeAI.desktop
           cat > dist/AppDir/usr/share/metainfo/io.github.cliptubeai.ClipTubeAI.appdata.xml <<'XML'
           <?xml version="1.0" encoding="UTF-8"?>

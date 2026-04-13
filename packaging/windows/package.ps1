@@ -25,7 +25,7 @@ Contents:
 - README.md
 
 Tip:
-Create a shortcut to cliptube-ai.exe and assign icon.ico if Windows does not pick the executable icon automatically.
+cliptube-ai.exe now includes the application icon embedded. The separate icon.ico is included only for optional shortcut customization.
 "@ | Set-Content -Path (Join-Path $PackageDir 'README-Windows.txt') -Encoding UTF8
 
 Compress-Archive -Path (Join-Path $PackageDir '*') -DestinationPath $ZipPath

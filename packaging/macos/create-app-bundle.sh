@@ -42,7 +42,9 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <key>CFBundleExecutable</key>
   <string>${BIN_NAME}</string>
   <key>CFBundleIconFile</key>
-  <string>icon.icns</string>
+  <string>icon</string>
+  <key>CFBundleIconName</key>
+  <string>icon</string>
   <key>CFBundleIdentifier</key>
   <string>${BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>
@@ -57,6 +59,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<PLIST
   <string>${VERSION}</string>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
+  <key>NSPrincipalClass</key>
+  <string>NSApplication</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>

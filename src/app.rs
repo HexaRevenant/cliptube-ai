@@ -17,7 +17,8 @@ use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::{
     ai::SummaryService,
-    transcript::TranscriptService,
+    db::{self, open_db, VideoEntry},
+    transcript::{TranscriptSegment, TranscriptService},
     ui::{components::install_multilingual_fonts, i18n::UiLanguage},
 };
 
@@ -48,13 +49,27 @@ struct PersistedUiSettings {
 
 #[derive(Clone)]
 struct ResultViewModel {
+    video_id: String,
     source_url: String,
+    title: Option<String>,
+    channel: Option<String>,
     video_meta: String,
     summary: String,
     key_points_text: String,
+    chat_text: String,
     share_text: String,
     transcript_text: String,
+    transcript_char_count: usize,
     ai_status: String,
+    language_label: String,
+    is_generated: bool,
+    subtitle_kind: String,
+    output_style: String,
+    output_style_index: usize,
+    ui_language: String,
+    model_name: String,
+    ollama_endpoint: String,
+    segments: Vec<TranscriptSegment>,
 }
 
 enum BackgroundMessage {
@@ -64,6 +79,63 @@ enum BackgroundMessage {
         replace_share_text: bool,
     },
     ModelsLoaded(Vec<String>),
+    ImportProgress {
+        current: usize,
+        total: usize,
+    },
+    ImportComplete {
+        new_count: usize,
+        updated_count: usize,
+        entries: Vec<VideoEntry>,
+    },
+    AutoQueueProgress {
+        current: usize,
+        total: usize,
+        video_id: String,
+    },
+    AutoQueueItemComplete {
+        video_id: String,
+        result: ResultViewModel,
+    },
+    AutoQueueError {
+        video_id: String,
+        error: String,
+        is_fatal: bool,
+    },
+    AutoQueueComplete,
+    ReprocessSegmentsProgress {
+        current: usize,
+        total: usize,
+        video_id: String,
+    },
+    ReprocessSegmentsItemComplete {
+        video_id: String,
+    },
+    ReprocessSegmentsError {
+        video_id: String,
+        error: String,
+    },
+    ReprocessSegmentsComplete {
+        processed: usize,
+        failed: usize,
+    },
+    ReprocessSummariesProgress {
+        current: usize,
+        total: usize,
+        video_id: String,
+    },
+    ReprocessSummariesItemComplete {
+        video_id: String,
+        result: ResultViewModel,
+    },
+    ReprocessSummariesError {
+        video_id: String,
+        error: String,
+    },
+    ReprocessSummariesComplete {
+        processed: usize,
+        failed: usize,
+    },
     Error(String),
 }
 
@@ -105,6 +177,37 @@ pub struct YoutubeNativeApp {
     chat_messages: Vec<ChatMessage>,
     brand_logo: egui::TextureHandle,
     copy_feedback_started_at: Option<Instant>,
+    pub(super) db_conn: Option<rusqlite::Connection>,
+    pub(super) history_entries: Vec<VideoEntry>,
+    pub(super) show_history_panel: bool,
+    pub(super) history_import_status: String,
+    pub(super) history_file_path: String,
+    pub(super) importing_history: bool,
+    pub(super) import_progress_current: usize,
+    pub(super) import_progress_total: usize,
+    pub(super) show_file_browser: bool,
+    pub(super) file_browser_current_dir: std::path::PathBuf,
+    pub(super) file_browser_entries: Vec<(String, bool)>,
+    pub(super) force_reanalyze: bool,
+    pub(super) auto_processing: bool,
+    pub(super) auto_queue: Vec<String>,
+    pub(super) auto_current: usize,
+    pub(super) auto_total: usize,
+    pub(super) auto_status: String,
+    pub(super) auto_stop_requested: bool,
+    pub(super) segments: Vec<TranscriptSegment>,
+    pub(super) reprocess_segments_processing: bool,
+    pub(super) reprocess_segments_queue: Vec<String>,
+    pub(super) reprocess_segments_current: usize,
+    pub(super) reprocess_segments_total: usize,
+    pub(super) reprocess_segments_status: String,
+    pub(super) reprocess_segments_stop_requested: bool,
+    pub(super) reprocess_summaries_processing: bool,
+    pub(super) reprocess_summaries_queue: Vec<String>,
+    pub(super) reprocess_summaries_current: usize,
+    pub(super) reprocess_summaries_total: usize,
+    pub(super) reprocess_summaries_status: String,
+    pub(super) reprocess_summaries_stop_requested: bool,
 }
 impl YoutubeNativeApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -132,6 +235,21 @@ impl YoutubeNativeApp {
         ];
         model_options.sort();
         model_options.dedup();
+
+        let db_conn = match open_db() {
+            Ok(conn) => {
+                eprintln!("[DB] Database opened successfully at {:?}", db::db_path());
+                Some(conn)
+            }
+            Err(e) => {
+                eprintln!("[DB] Failed to open database: {e}");
+                None
+            }
+        };
+        let history_entries = db_conn
+            .as_ref()
+            .and_then(|conn| db::load_videos(conn).ok())
+            .unwrap_or_default();
 
         Self {
             state: AppState {
@@ -190,6 +308,37 @@ impl YoutubeNativeApp {
                 egui::TextureOptions::LINEAR,
             ),
             copy_feedback_started_at: None,
+            db_conn,
+            history_entries,
+            show_history_panel: false,
+            history_import_status: String::new(),
+            history_file_path: "/home/hexa/Descargas/Takeout/YouTube y YouTube Music/historial de videos/historial de reproducciones.html".to_string(),
+            importing_history: false,
+            import_progress_current: 0,
+            import_progress_total: 0,
+            show_file_browser: false,
+            file_browser_current_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+            file_browser_entries: Vec::new(),
+            force_reanalyze: false,
+            auto_processing: false,
+            auto_queue: Vec::new(),
+            auto_current: 0,
+            auto_total: 0,
+            auto_status: String::new(),
+            auto_stop_requested: false,
+            segments: Vec::new(),
+            reprocess_segments_processing: false,
+            reprocess_segments_queue: Vec::new(),
+            reprocess_segments_current: 0,
+            reprocess_segments_total: 0,
+            reprocess_segments_status: String::new(),
+            reprocess_segments_stop_requested: false,
+            reprocess_summaries_processing: false,
+            reprocess_summaries_queue: Vec::new(),
+            reprocess_summaries_current: 0,
+            reprocess_summaries_total: 0,
+            reprocess_summaries_status: String::new(),
+            reprocess_summaries_stop_requested: false,
         }
         .with_initial_model_refresh()
     }

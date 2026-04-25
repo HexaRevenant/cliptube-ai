@@ -1,6 +1,7 @@
 use eframe::egui;
 
 use super::*;
+use crate::db;
 use crate::ui::{
     components::{
         field_label, full_width_card, full_width_title_block, icon_button, metric_chip,
@@ -191,6 +192,12 @@ impl YoutubeNativeApp {
                             });
                     });
 
+                    ui.add_space(LayoutSpace::SM);
+                    ui.checkbox(
+                        &mut self.force_reanalyze,
+                        "Forzar re-análisis (ignorar cache)",
+                    );
+
                     ui.add_space(LayoutSpace::MD);
                     ui.horizontal_wrapped(|ui| {
                         if ui
@@ -208,12 +215,9 @@ impl YoutubeNativeApp {
                         }
 
                         if ui
-                            .add_enabled(
-                                !self.busy && !self.share_text.is_empty(),
-                                {
-                                    let copy_button = if let Some(progress) =
-                                        self.copy_feedback_progress()
-                                    {
+                            .add_enabled(!self.busy && !self.share_text.is_empty(), {
+                                let copy_button =
+                                    if let Some(progress) = self.copy_feedback_progress() {
                                         let pulse = 1.0 - progress;
                                         let fill = egui::lerp(
                                             egui::Rgba::from(BrandColors::CYAN)
@@ -232,20 +236,389 @@ impl YoutubeNativeApp {
                                             1.0 + (pulse * 1.5),
                                             BrandColors::line_strong(),
                                         ))
-                                        .corner_radius(egui::CornerRadius::same(
-                                            LayoutSpace::INPUT_RADIUS,
-                                        ))
+                                        .corner_radius(
+                                            egui::CornerRadius::same(LayoutSpace::INPUT_RADIUS),
+                                        )
                                     } else {
                                         secondary_button(self.ui_language.text("copy_final"))
                                     };
-                                    copy_button
-                                },
-                            )
+                                copy_button
+                            })
                             .clicked()
                         {
                             self.copy_share_text();
                         }
                     });
+                });
+
+                ui.add_space(LayoutSpace::MD);
+
+                full_width_card(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new(self.ui_language.text("history"))
+                                .size(18.0)
+                                .strong()
+                                .color(BrandColors::TEXT),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .add(secondary_button(if self.show_history_panel {
+                                    "▲"
+                                } else {
+                                    "▼"
+                                }))
+                                .clicked()
+                            {
+                                self.show_history_panel = !self.show_history_panel;
+                            }
+                        });
+                    });
+                    if !self.history_import_status.is_empty() {
+                        ui.add_space(LayoutSpace::XS);
+                        ui.colored_label(BrandColors::CYAN, &self.history_import_status);
+                    }
+                    if self.show_history_panel {
+                        ui.add_space(LayoutSpace::SM);
+                        ui.horizontal(|ui| {
+                            if ui.add(icon_button("📁", "Explorar")).clicked() {
+                                self.open_file_browser();
+                            }
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.history_file_path)
+                                    .hint_text("Ruta del archivo HTML de YouTube...")
+                                    .desired_width(ui.available_width() - 170.0),
+                            );
+                            if ui
+                                .add_enabled(
+                                    !self.busy && !self.importing_history,
+                                    secondary_button(self.ui_language.text("import_history")),
+                                )
+                                .clicked()
+                            {
+                                self.import_youtube_history();
+                            }
+                        });
+                        ui.add_space(LayoutSpace::SM);
+                        if self.importing_history {
+                            let progress = if self.import_progress_total > 0 {
+                                self.import_progress_current as f32
+                                    / self.import_progress_total as f32
+                            } else {
+                                0.0
+                            };
+                            ui.add(
+                                egui::ProgressBar::new(progress)
+                                    .text(format!(
+                                        "Importando {} / {}",
+                                        self.import_progress_current, self.import_progress_total
+                                    ))
+                                    .fill(BrandColors::VIOLET)
+                                    .desired_width(ui.available_width()),
+                            );
+                            ui.ctx().request_repaint();
+                        }
+
+                        // Auto-processing controls
+                        ui.add_space(LayoutSpace::SM);
+                        ui.horizontal(|ui| {
+                            if self.auto_processing {
+                                if ui.add(secondary_button("⏹ Detener auto")).clicked() {
+                                    self.stop_auto_processing();
+                                }
+                            } else {
+                                // Count pending videos
+                                let pending = self
+                                    .history_entries
+                                    .iter()
+                                    .filter(|e| e.summary.is_empty())
+                                    .count();
+                                let button_text = if pending > 0 {
+                                    format!("▶ Procesar lista ({} pendientes)", pending)
+                                } else {
+                                    "▶ Procesar lista".to_string()
+                                };
+                                if ui
+                                    .add_enabled(
+                                        !self.busy && !self.importing_history && pending > 0,
+                                        secondary_button(&button_text),
+                                    )
+                                    .clicked()
+                                {
+                                    self.start_auto_processing();
+                                }
+                            }
+                        });
+
+                        ui.add_space(LayoutSpace::XS);
+                        ui.horizontal(|ui| {
+                            let retryable = self
+                                .history_entries
+                                .iter()
+                                .filter(|e| {
+                                    let status = e.ai_status.to_lowercase();
+                                    e.summary.trim().is_empty()
+                                        || status.contains("429")
+                                        || status.contains("too many requests")
+                                        || status.contains("error en ia")
+                                        || status.contains("fallback extractivo")
+                                })
+                                .count();
+                            let button_text = if retryable > 0 {
+                                format!("🔁 Reintentar pendientes/fallidos ({retryable})")
+                            } else {
+                                "🔁 Reintentar pendientes/fallidos".to_string()
+                            };
+                            if ui
+                                .add_enabled(
+                                    !self.busy && !self.importing_history && !self.auto_processing && retryable > 0,
+                                    secondary_button(&button_text),
+                                )
+                                .clicked()
+                            {
+                                self.retry_pending_and_failed();
+                            }
+                        });
+
+                        // Re-process timestamps controls
+                        ui.add_space(LayoutSpace::SM);
+                        ui.horizontal(|ui| {
+                            if self.reprocess_segments_processing {
+                                if ui.add(secondary_button("⏹ Detener reproceso")).clicked() {
+                                    self.stop_reprocess_segments();
+                                }
+                            } else {
+                                // Count videos without timestamps
+                                let missing = if let Some(conn) = self.db_conn.as_ref() {
+                                    db::load_videos_without_segments(conn)
+                                        .map(|v| v.len())
+                                        .unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                let button_text = if missing > 0 {
+                                    format!("⏱ Reprocesar tiempos ({} sin tiempos)", missing)
+                                } else {
+                                    "⏱ Reprocesar tiempos".to_string()
+                                };
+                                if ui
+                                    .add_enabled(
+                                        !self.busy
+                                            && !self.importing_history
+                                            && !self.auto_processing
+                                            && missing > 0,
+                                        secondary_button(&button_text),
+                                    )
+                                    .clicked()
+                                {
+                                    self.start_reprocess_segments();
+                                }
+                            }
+                        });
+
+                        // Re-process summaries controls
+                        ui.add_space(LayoutSpace::SM);
+                        ui.horizontal(|ui| {
+                            if self.reprocess_summaries_processing {
+                                if ui
+                                    .add(secondary_button("⏹ Detener reproceso resúmenes"))
+                                    .clicked()
+                                {
+                                    self.stop_reprocess_summaries();
+                                }
+                            } else {
+                                let retryable = self
+                                    .history_entries
+                                    .iter()
+                                    .filter(|e| {
+                                        let status = e.ai_status.to_lowercase();
+                                        (!e.transcript_text.trim().is_empty())
+                                            && (e.summary.trim().is_empty()
+                                                || status.contains("429")
+                                                || status.contains("too many requests")
+                                                || status.contains("fallback extractivo")
+                                                || status.contains("no tiene el formato esperado"))
+                                    })
+                                    .count();
+                                let button_text = if retryable > 0 {
+                                    format!(
+                                        "🔁 Reprocesar resúmenes ({} pendientes)",
+                                        retryable
+                                    )
+                                } else {
+                                    "🔁 Reprocesar resúmenes".to_string()
+                                };
+                                if ui
+                                    .add_enabled(
+                                        !self.busy
+                                            && !self.importing_history
+                                            && !self.auto_processing
+                                            && !self.reprocess_segments_processing
+                                            && retryable > 0,
+                                        secondary_button(&button_text),
+                                    )
+                                    .clicked()
+                                {
+                                    self.start_reprocess_summaries();
+                                }
+                            }
+                        });
+                        if self.auto_processing && self.auto_total > 0 {
+                            let progress = self.auto_current as f32 / self.auto_total as f32;
+                            let remaining = self.auto_total.saturating_sub(self.auto_current);
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::ProgressBar::new(progress)
+                                        .text(format!(
+                                            "Procesando {} de {} | {} faltan | {}%",
+                                            self.auto_current,
+                                            self.auto_total,
+                                            remaining,
+                                            (progress * 100.0) as u32
+                                        ))
+                                        .fill(BrandColors::PINK)
+                                        .desired_width(ui.available_width()),
+                                );
+                                if !self.auto_status.is_empty() {
+                                    ui.colored_label(
+                                        BrandColors::CYAN,
+                                        format!("📋 {}", self.auto_status),
+                                    );
+                                }
+                            });
+                            ui.ctx().request_repaint();
+                        } else if !self.auto_status.is_empty() {
+                            ui.colored_label(BrandColors::CYAN, &self.auto_status);
+                        }
+
+                        if self.reprocess_segments_processing && self.reprocess_segments_total > 0 {
+                            let progress = self.reprocess_segments_current as f32
+                                / self.reprocess_segments_total as f32;
+                            let remaining = self
+                                .reprocess_segments_total
+                                .saturating_sub(self.reprocess_segments_current);
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::ProgressBar::new(progress)
+                                        .text(format!(
+                                            "Reprocesando tiempos {} de {} | {} faltan | {}%",
+                                            self.reprocess_segments_current,
+                                            self.reprocess_segments_total,
+                                            remaining,
+                                            (progress * 100.0) as u32
+                                        ))
+                                        .fill(BrandColors::CYAN)
+                                        .desired_width(ui.available_width()),
+                                );
+                                if !self.reprocess_segments_status.is_empty() {
+                                    ui.colored_label(
+                                        BrandColors::CYAN,
+                                        format!("⏱ {}", self.reprocess_segments_status),
+                                    );
+                                }
+                            });
+                            ui.ctx().request_repaint();
+                        } else if !self.reprocess_segments_status.is_empty() {
+                            ui.colored_label(BrandColors::CYAN, &self.reprocess_segments_status);
+                        }
+
+                        if self.reprocess_summaries_processing && self.reprocess_summaries_total > 0
+                        {
+                            let progress = self.reprocess_summaries_current as f32
+                                / self.reprocess_summaries_total as f32;
+                            let remaining = self
+                                .reprocess_summaries_total
+                                .saturating_sub(self.reprocess_summaries_current);
+                            ui.vertical(|ui| {
+                                ui.add(
+                                    egui::ProgressBar::new(progress)
+                                        .text(format!(
+                                            "Reprocesando resúmenes {} de {} | {} faltan | {}%",
+                                            self.reprocess_summaries_current,
+                                            self.reprocess_summaries_total,
+                                            remaining,
+                                            (progress * 100.0) as u32
+                                        ))
+                                        .fill(BrandColors::VIOLET)
+                                        .desired_width(ui.available_width()),
+                                );
+                                if !self.reprocess_summaries_status.is_empty() {
+                                    ui.colored_label(
+                                        BrandColors::VIOLET,
+                                        format!("🔁 {}", self.reprocess_summaries_status),
+                                    );
+                                }
+                            });
+                            ui.ctx().request_repaint();
+                        } else if !self.reprocess_summaries_status.is_empty() {
+                            ui.colored_label(BrandColors::VIOLET, &self.reprocess_summaries_status);
+                        }
+                        if self.history_entries.is_empty() {
+                            ui.colored_label(
+                                BrandColors::MUTED,
+                                self.ui_language.text("no_history"),
+                            );
+                        } else {
+                            egui::ScrollArea::vertical()
+                                .max_height(280.0)
+                                .show(ui, |ui| {
+                                    for entry in self.history_entries.clone() {
+                                        ui.horizontal(|ui| {
+                                            ui.vertical(|ui| {
+                                                ui.label(
+                                                    egui::RichText::new(entry.display_title())
+                                                        .size(14.0)
+                                                        .color(BrandColors::TEXT),
+                                                );
+                                                if let Some(date) = &entry.watched_at {
+                                                    ui.colored_label(
+                                                        BrandColors::MUTED,
+                                                        egui::RichText::new(date)
+                                                            .size(11.0)
+                                                            .italics(),
+                                                    );
+                                                }
+                                            });
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui
+                                                        .add(icon_button(
+                                                            "🗑",
+                                                            self.ui_language.text("delete"),
+                                                        ))
+                                                        .clicked()
+                                                    {
+                                                        self.delete_history_entry(&entry.video_id);
+                                                    }
+                                                    if ui
+                                                        .add(icon_button(
+                                                            "📋",
+                                                            self.ui_language.text("copy_final"),
+                                                        ))
+                                                        .clicked()
+                                                    {
+                                                        self.copy_entry_share_text(
+                                                            &entry.share_text,
+                                                        );
+                                                    }
+                                                    if ui
+                                                        .add(icon_button(
+                                                            "📂",
+                                                            self.ui_language.text("load"),
+                                                        ))
+                                                        .clicked()
+                                                    {
+                                                        self.load_video_from_db(&entry);
+                                                    }
+                                                },
+                                            );
+                                        });
+                                        ui.add_space(LayoutSpace::XS);
+                                    }
+                                });
+                        }
+                    }
                 });
 
                 ui.add_space(LayoutSpace::MD);

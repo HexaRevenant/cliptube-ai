@@ -32,6 +32,10 @@
 - 🧠 Chat with AI about the video
 - ✨ Improve the final text before sharing
 - 🎛 Select models directly from **Ollama**
+- 🔁 Retry pending/failed videos in bulk
+- 🧰 Reprocess summaries from stored transcripts
+- ⏱ Reprocess missing transcript timestamps
+- 🛟 Use **yt-dlp fallback** when YouTube transcript tracks fail
 
 ### 🧩 Main features
 
@@ -39,6 +43,9 @@
 - ⚡ Local **Ollama** integration
 - 🎯 Dynamic model selector loaded from Ollama
 - 📌 Persistent right-side **AI chat** panel
+- 🛟 Dual transcript strategy: internal YouTube captions + `yt-dlp` fallback
+- 🔎 Full-text search indexes (FTS5) for videos and transcript segments
+- 🔁 Recovery actions for failed/pending summary jobs
 - 🌐 Base multilingual support
 - 🖥 System language auto-detection
 - 📦 Designed for **Linux / macOS / Windows**
@@ -47,6 +54,7 @@
 
 - Rust / Cargo
 - Ollama running locally
+- `yt-dlp` installed and available in PATH (for transcript fallback)
 - At least one model available in `ollama list`
 - A graphical desktop environment
 
@@ -157,6 +165,10 @@ This project is released under the **MIT License**. See [`LICENSE`](LICENSE).
 - 🧠 Chatear con la IA sobre el video
 - ✨ Mejorar el texto final antes de compartirlo
 - 🎛 Elegir modelos directamente desde **Ollama**
+- 🔁 Reintentar en lote los videos pendientes/fallidos
+- 🧰 Reprocesar resúmenes desde transcripts guardados
+- ⏱ Reprocesar tiempos faltantes de transcript
+- 🛟 Usar **fallback con yt-dlp** cuando fallen las pistas de subtítulos de YouTube
 
 ### 🧩 Características principales
 
@@ -164,6 +176,9 @@ This project is released under the **MIT License**. See [`LICENSE`](LICENSE).
 - ⚡ Integración con **Ollama local**
 - 🎯 Selector dinámico de modelos cargado desde Ollama
 - 📌 Panel lateral fijo de **chat IA**
+- 🛟 Estrategia dual de transcript: captions internas de YouTube + fallback `yt-dlp`
+- 🔎 Índices de búsqueda full-text (FTS5) para videos y segmentos
+- 🔁 Acciones de recuperación para jobs de resumen pendientes/fallidos
 - 🌐 Soporte base multiidioma
 - 🖥 Detección automática del idioma del sistema
 - 📦 Pensada para **Linux / macOS / Windows**
@@ -172,6 +187,7 @@ This project is released under the **MIT License**. See [`LICENSE`](LICENSE).
 
 - Rust / Cargo
 - Ollama ejecutándose localmente
+- `yt-dlp` instalado y disponible en PATH (para fallback de transcript)
 - Al menos un modelo disponible en `ollama list`
 - Un entorno gráfico de escritorio
 
@@ -281,6 +297,10 @@ Este proyecto se publica bajo la **Licencia MIT**. Revisa [`LICENSE`](LICENSE).
 - 🧠 Conversar com a IA sobre o vídeo
 - ✨ Melhorar o texto final antes de compartilhar
 - 🎛 Escolher modelos diretamente do **Ollama**
+- 🔁 Repetir em lote vídeos pendentes/com falha
+- 🧰 Reprocessar resumos a partir de transcrições já salvas
+- ⏱ Reprocessar timestamps ausentes dos segmentos
+- 🛟 Usar **fallback com yt-dlp** quando falhar a trilha de legendas do YouTube
 
 ### 🧩 Principais recursos
 
@@ -288,6 +308,9 @@ Este proyecto se publica bajo la **Licencia MIT**. Revisa [`LICENSE`](LICENSE).
 - ⚡ Integração com **Ollama local**
 - 🎯 Seletor dinâmico de modelos carregado do Ollama
 - 📌 Painel lateral fixo de **chat com IA**
+- 🛟 Estratégia dupla de transcript: captions internas do YouTube + fallback `yt-dlp`
+- 🔎 Índices full-text (FTS5) para vídeos e segmentos da transcrição
+- 🔁 Ações de recuperação para jobs de resumo pendentes/com falha
 - 🌐 Suporte base multilíngue
 - 🖥 Detecção automática do idioma do sistema
 - 📦 Projetado para **Linux / macOS / Windows**
@@ -296,6 +319,7 @@ Este proyecto se publica bajo la **Licencia MIT**. Revisa [`LICENSE`](LICENSE).
 
 - Rust / Cargo
 - Ollama rodando localmente
+- `yt-dlp` instalado e disponível no PATH (para fallback de transcrição)
 - Pelo menos um modelo disponível em `ollama list`
 - Um ambiente gráfico de desktop
 

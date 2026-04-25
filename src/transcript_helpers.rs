@@ -3,7 +3,7 @@ use regex::Regex;
 use roxmltree::{Document, Node};
 use url::Url;
 
-use crate::transcript::TranscriptError;
+use crate::transcript::{TranscriptError, TranscriptSegment};
 
 pub(crate) fn extract_video_id(input: &str) -> Result<String, TranscriptError> {
     let input = input.trim();
@@ -57,28 +57,40 @@ pub(crate) fn extract_api_key(html: &str) -> Option<String> {
     None
 }
 
-pub(crate) fn parse_transcript_xml(xml: &str) -> Result<String, TranscriptError> {
+pub(crate) fn parse_transcript_xml(xml: &str) -> Result<Vec<TranscriptSegment>, TranscriptError> {
     let doc = Document::parse(xml)?;
     let strip_tags = Regex::new(r"<[^>]+>").expect("regex válida");
 
-    let mut lines = Vec::new();
+    let mut segments = Vec::new();
 
     for node in doc.descendants().filter(|node| node.has_tag_name("text")) {
         let text = collect_node_text(node);
         let decoded = decode_html_entities(&text).to_string();
         let cleaned = strip_tags.replace_all(&decoded, "").trim().to_string();
         if !cleaned.is_empty() {
-            lines.push(cleaned);
+            let start = node
+                .attribute("start")
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            let duration = node
+                .attribute("dur")
+                .and_then(|s| s.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            segments.push(TranscriptSegment {
+                start,
+                duration,
+                text: cleaned,
+            });
         }
     }
 
-    if lines.is_empty() {
+    if segments.is_empty() {
         return Err(TranscriptError::TranscriptParse(
             "La transcripción llegó vacía".into(),
         ));
     }
 
-    Ok(lines.join("\n"))
+    Ok(segments)
 }
 
 fn collect_node_text(node: Node<'_, '_>) -> String {

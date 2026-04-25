@@ -9,8 +9,11 @@ winresource = "0.1.20"
 
 [dependencies]
 arboard = "3.6.1"
+chrono = "0.4"
+dirs = "5"
 eframe = { version = "0.34.1", default-features = true }
 html-escape = "0.2.13"
+rusqlite = { version = "0.34", features = ["bundled"] }
 regex = "1.12.3"
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "cookies", "rustls", "gzip", "brotli", "deflate"] }
 resvg = "0.46.0"

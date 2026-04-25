@@ -712,6 +712,7 @@ impl UiLanguage {
                 | "status_context_ready"
                 | "status_improved"
                 | "status_chat_ready"
+                | "status_loaded_from_history"
                 | "models_loaded"
                 | "status_need_transcript"
                 | "status_need_question"
@@ -774,6 +775,7 @@ impl UiLanguage {
                 }
                 "status_improved" => "Texto final mejorado con IA.",
                 "status_chat_ready" => "Respuesta del chat lista.",
+                "status_loaded_from_history" => "Video cargado desde el historial.",
                 "models_loaded" => "Modelos cargados desde Ollama",
                 "status_need_transcript" => "Primero debes obtener el transcript del video.",
                 "status_need_question" => "Escribe una pregunta para la IA.",
@@ -795,6 +797,12 @@ impl UiLanguage {
                 "executive_format" => "Resumen ejecutivo",
                 "bullets_format" => "Bullets directos",
                 "message" => "Mensaje",
+                "history" => "Historial",
+                "import_history" => "Importar historial de YouTube",
+                "load" => "Cargar",
+                "delete" => "Eliminar",
+                "no_history" => "No hay videos guardados",
+                "history_imported" => "Historial importado",
                 _ => key,
             },
             (
@@ -829,6 +837,7 @@ impl UiLanguage {
                 | "status_context_ready"
                 | "status_improved"
                 | "status_chat_ready"
+                | "status_loaded_from_history"
                 | "models_loaded"
                 | "status_need_transcript"
                 | "status_need_question"
@@ -891,6 +900,7 @@ impl UiLanguage {
                 }
                 "status_improved" => "Final text improved with AI.",
                 "status_chat_ready" => "Chat response ready.",
+                "status_loaded_from_history" => "Video loaded from history.",
                 "models_loaded" => "Models loaded from Ollama",
                 "status_need_transcript" => "You need to fetch the video transcript first.",
                 "status_need_question" => "Write a question for the AI.",
@@ -912,6 +922,12 @@ impl UiLanguage {
                 "executive_format" => "Executive summary",
                 "bullets_format" => "Direct bullets",
                 "message" => "Message",
+                "history" => "History",
+                "import_history" => "Import YouTube history",
+                "load" => "Load",
+                "delete" => "Delete",
+                "no_history" => "No saved videos",
+                "history_imported" => "History imported",
                 _ => key,
             },
             (
@@ -946,6 +962,7 @@ impl UiLanguage {
                 | "status_context_ready"
                 | "status_improved"
                 | "status_chat_ready"
+                | "status_loaded_from_history"
                 | "models_loaded"
                 | "status_need_transcript"
                 | "status_need_question"
@@ -1008,6 +1025,7 @@ impl UiLanguage {
                 }
                 "status_improved" => "Texto final melhorado com IA.",
                 "status_chat_ready" => "Resposta do chat pronta.",
+                "status_loaded_from_history" => "Vídeo carregado do histórico.",
                 "models_loaded" => "Modelos carregados do Ollama",
                 "status_need_transcript" => "Primeiro você precisa obter a transcrição do vídeo.",
                 "status_need_question" => "Escreva uma pergunta para a IA.",
@@ -1029,6 +1047,12 @@ impl UiLanguage {
                 "executive_format" => "Resumo executivo",
                 "bullets_format" => "Bullets diretos",
                 "message" => "Mensagem",
+                "history" => "Histórico",
+                "import_history" => "Importar histórico do YouTube",
+                "load" => "Carregar",
+                "delete" => "Excluir",
+                "no_history" => "Nenhum vídeo salvo",
+                "history_imported" => "Histórico importado",
                 _ => key,
             },
             (Self::Fr | Self::De | Self::Ja | Self::ZhHans | Self::Ru | Self::Ar | Self::Hi, _) => {

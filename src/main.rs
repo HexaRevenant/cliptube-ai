@@ -1,5 +1,7 @@
 mod ai;
 mod app;
+mod db;
+mod history;
 mod transcript;
 mod transcript_helpers;
 mod ui;

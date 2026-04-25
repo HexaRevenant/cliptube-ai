@@ -1,4 +1,4 @@
-use eframe::{App, Frame, egui};
+use eframe::{egui, App, Frame};
 
 use super::*;
 use crate::ui::{
@@ -104,6 +104,46 @@ impl App for YoutubeNativeApp {
                     }),
             )
             .show_inside(&mut root_ui, |ui| self.render_main_panel(ui));
+
+        if self.show_file_browser {
+            egui::Window::new("Seleccionar archivo")
+                .resizable(true)
+                .default_size([500.0, 400.0])
+                .collapsible(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label(format!("📁 {}", self.file_browser_current_dir.display()));
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .max_height(280.0)
+                        .show(ui, |ui| {
+                            for (name, is_dir) in self.file_browser_entries.clone() {
+                                let display_name = if is_dir {
+                                    format!("📁 {}", name)
+                                } else {
+                                    format!("📄 {}", name)
+                                };
+                                if ui
+                                    .add(egui::Button::new(display_name).frame(false))
+                                    .clicked()
+                                {
+                                    if is_dir {
+                                        let clean_name = name.trim_start_matches("📁 ");
+                                        self.navigate_file_browser(clean_name);
+                                    } else {
+                                        let clean_name = name.trim_start_matches("📄 ");
+                                        self.select_file_browser(clean_name);
+                                    }
+                                }
+                            }
+                        });
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        if ui.button("Cancelar").clicked() {
+                            self.show_file_browser = false;
+                        }
+                    });
+                });
+        }
     }
 
     fn save(&mut self, storage: &mut dyn eframe::Storage) {

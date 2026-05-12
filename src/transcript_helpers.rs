@@ -99,3 +99,26 @@ fn collect_node_text(node: Node<'_, '_>) -> String {
         .collect::<Vec<_>>()
         .join("")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::extract_video_id;
+
+    #[test]
+    fn extract_video_id_from_watch_url() {
+        let id = extract_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+            .expect("must parse watch URL");
+        assert_eq!(id, "dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn extract_video_id_from_short_url() {
+        let id = extract_video_id("https://youtu.be/dQw4w9WgXcQ").expect("must parse short URL");
+        assert_eq!(id, "dQw4w9WgXcQ");
+    }
+
+    #[test]
+    fn reject_invalid_id() {
+        assert!(extract_video_id("https://youtu.be/invalid").is_err());
+    }
+}

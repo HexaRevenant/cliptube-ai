@@ -248,6 +248,16 @@ impl YoutubeNativeApp {
                         {
                             self.copy_share_text();
                         }
+
+                        if ui
+                            .add_enabled(
+                                !self.busy && !self.latest_share_link.is_empty(),
+                                secondary_button("Copiar link"),
+                            )
+                            .clicked()
+                        {
+                            self.copy_latest_share_link();
+                        }
                     });
                 });
 
@@ -355,14 +365,7 @@ impl YoutubeNativeApp {
                             let retryable = self
                                 .history_entries
                                 .iter()
-                                .filter(|e| {
-                                    let status = e.ai_status.to_lowercase();
-                                    e.summary.trim().is_empty()
-                                        || status.contains("429")
-                                        || status.contains("too many requests")
-                                        || status.contains("error en ia")
-                                        || status.contains("fallback extractivo")
-                                })
+                                .filter(|e| e.summary_reprocess_needed())
                                 .count();
                             let button_text = if retryable > 0 {
                                 format!("🔁 Reintentar pendientes/fallidos ({retryable})")
@@ -371,7 +374,10 @@ impl YoutubeNativeApp {
                             };
                             if ui
                                 .add_enabled(
-                                    !self.busy && !self.importing_history && !self.auto_processing && retryable > 0,
+                                    !self.busy
+                                        && !self.importing_history
+                                        && !self.auto_processing
+                                        && retryable > 0,
                                     secondary_button(&button_text),
                                 )
                                 .clicked()
@@ -430,21 +436,10 @@ impl YoutubeNativeApp {
                                 let retryable = self
                                     .history_entries
                                     .iter()
-                                    .filter(|e| {
-                                        let status = e.ai_status.to_lowercase();
-                                        (!e.transcript_text.trim().is_empty())
-                                            && (e.summary.trim().is_empty()
-                                                || status.contains("429")
-                                                || status.contains("too many requests")
-                                                || status.contains("fallback extractivo")
-                                                || status.contains("no tiene el formato esperado"))
-                                    })
+                                    .filter(|e| e.has_transcript() && e.summary_reprocess_needed())
                                     .count();
                                 let button_text = if retryable > 0 {
-                                    format!(
-                                        "🔁 Reprocesar resúmenes ({} pendientes)",
-                                        retryable
-                                    )
+                                    format!("🔁 Reprocesar resúmenes ({} pendientes)", retryable)
                                 } else {
                                     "🔁 Reprocesar resúmenes".to_string()
                                 };
@@ -650,6 +645,49 @@ impl YoutubeNativeApp {
                     true,
                     self.ui_language,
                 );
+                ui.add_space(LayoutSpace::SM);
+                full_width_card(ui, |ui| {
+                    ui.label(
+                        egui::RichText::new("Links compartibles")
+                            .size(16.0)
+                            .color(BrandColors::TEXT),
+                    );
+                    if !self.latest_share_link.is_empty() {
+                        ui.colored_label(
+                            BrandColors::CYAN,
+                            format!("Último link: {}", self.latest_share_link),
+                        );
+                    }
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.share_link_token_input)
+                            .desired_width(f32::INFINITY)
+                            .hint_text("Pega token o URL del link"),
+                    );
+                    ui.horizontal_wrapped(|ui| {
+                        if ui
+                            .add_enabled(!self.busy, secondary_button("Resolver link"))
+                            .clicked()
+                        {
+                            self.resolve_share_link();
+                        }
+                        if ui
+                            .add_enabled(!self.busy, secondary_button("Revocar link"))
+                            .clicked()
+                        {
+                            self.revoke_share_link_by_input();
+                        }
+                    });
+                    if !self.share_link_resolved_text.is_empty() {
+                        ui.add_space(LayoutSpace::XS);
+                        let mut resolved = self.share_link_resolved_text.clone();
+                        ui.add(
+                            egui::TextEdit::multiline(&mut resolved)
+                                .desired_width(f32::INFINITY)
+                                .desired_rows(5)
+                                .interactive(false),
+                        );
+                    }
+                });
                 let transcript_height = (ui.available_height() - LayoutSpace::XL).max(220.0);
                 section_text_stretch(
                     ui,

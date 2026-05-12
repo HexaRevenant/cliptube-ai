@@ -1,4 +1,5 @@
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
+use tracing::info;
 
 use crate::transcript::TranscriptSegment;
 
@@ -45,6 +46,26 @@ impl VideoEntry {
                 }
             })
     }
+
+    pub fn has_summary(&self) -> bool {
+        !self.summary.trim().is_empty()
+    }
+
+    pub fn has_transcript(&self) -> bool {
+        !self.transcript_text.trim().is_empty()
+    }
+
+    pub fn summary_reprocess_needed(&self) -> bool {
+        if !self.has_summary() {
+            return true;
+        }
+        let status = self.ai_status.to_lowercase();
+        status.contains("error en ia")
+            || status.contains("429")
+            || status.contains("too many requests")
+            || status.contains("fallback extractivo")
+            || status.contains("no tiene el formato esperado")
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +75,16 @@ pub struct HistoryEntry {
     pub title: String,
     pub channel: String,
     pub watched_at: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct ShareLinkEntry {
+    pub token: String,
+    pub video_id: String,
+    pub share_text: String,
+    pub expires_at: Option<String>,
+    pub revoked: bool,
+    pub created_at: String,
 }
 
 fn column_exists(conn: &Connection, table: &str, column: &str) -> Result<bool, rusqlite::Error> {
@@ -157,7 +188,7 @@ fn maybe_migrate_from_cwd(new_path: &std::path::Path) {
         .unwrap_or_else(|_| std::path::PathBuf::from("."))
         .join("cliptube.db");
     if cwd_db.exists() && !new_path.exists() {
-        eprintln!(
+        info!(
             "Migrating database from {} to {}",
             cwd_db.display(),
             new_path.display()
@@ -239,6 +270,27 @@ pub fn open_db() -> Result<Connection, rusqlite::Error> {
     conn.execute(
         "CREATE INDEX IF NOT EXISTS idx_videos_watched_created
          ON videos(watched_at_sortable DESC, created_at DESC)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS share_links (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            token TEXT NOT NULL UNIQUE,
+            video_id TEXT NOT NULL,
+            share_text TEXT NOT NULL,
+            expires_at TEXT,
+            revoked INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (video_id) REFERENCES videos(video_id) ON DELETE CASCADE
+        )",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_share_links_video_id ON share_links(video_id)",
+        [],
+    )?;
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_share_links_expires_at ON share_links(expires_at)",
         [],
     )?;
 
@@ -475,6 +527,7 @@ pub fn video_exists(conn: &Connection, video_id: &str) -> Result<bool, rusqlite:
     Ok(count > 0)
 }
 
+#[allow(dead_code)]
 pub fn has_segments(conn: &Connection, video_id: &str) -> Result<bool, rusqlite::Error> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM transcript_segments WHERE video_id = ?1",
@@ -517,4 +570,112 @@ pub fn update_history_fields(
         params![title, channel, watched_at, video_id, sortable],
     )?;
     Ok(changed > 0)
+}
+
+pub fn save_share_link(conn: &Connection, entry: &ShareLinkEntry) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "INSERT INTO share_links (token, video_id, share_text, expires_at, revoked, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            entry.token,
+            entry.video_id,
+            entry.share_text,
+            entry.expires_at,
+            entry.revoked as i32,
+            entry.created_at
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn load_share_link_by_token(
+    conn: &Connection,
+    token: &str,
+) -> Result<Option<ShareLinkEntry>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT token, video_id, share_text, expires_at, revoked, created_at
+         FROM share_links
+         WHERE token = ?1",
+    )?;
+    let mut rows = stmt.query_map([token], |row| {
+        Ok(ShareLinkEntry {
+            token: row.get(0)?,
+            video_id: row.get(1)?,
+            share_text: row.get(2)?,
+            expires_at: row.get(3)?,
+            revoked: row.get::<_, i32>(4)? != 0,
+            created_at: row.get(5)?,
+        })
+    })?;
+    Ok(rows.next().transpose()?)
+}
+
+pub fn revoke_share_link(conn: &Connection, token: &str) -> Result<bool, rusqlite::Error> {
+    let changed = conn.execute(
+        "UPDATE share_links SET revoked = 1 WHERE token = ?1",
+        [token],
+    )?;
+    Ok(changed > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ShareLinkEntry, load_share_link_by_token, revoke_share_link, save_share_link};
+    use rusqlite::Connection;
+
+    fn setup_share_links_schema(conn: &Connection) {
+        conn.execute(
+            "CREATE TABLE share_links (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token TEXT NOT NULL UNIQUE,
+                video_id TEXT NOT NULL,
+                share_text TEXT NOT NULL,
+                expires_at TEXT,
+                revoked INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL
+            )",
+            [],
+        )
+        .expect("schema");
+    }
+
+    #[test]
+    fn save_and_load_share_link() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        setup_share_links_schema(&conn);
+        let entry = ShareLinkEntry {
+            token: "abc123".to_string(),
+            video_id: "dQw4w9WgXcQ".to_string(),
+            share_text: "texto".to_string(),
+            expires_at: None,
+            revoked: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        save_share_link(&conn, &entry).expect("save");
+        let loaded = load_share_link_by_token(&conn, "abc123")
+            .expect("load")
+            .expect("exists");
+        assert_eq!(loaded.token, "abc123");
+        assert!(!loaded.revoked);
+    }
+
+    #[test]
+    fn revoke_share_link_marks_entry() {
+        let conn = Connection::open_in_memory().expect("memory db");
+        setup_share_links_schema(&conn);
+        let entry = ShareLinkEntry {
+            token: "to-revoke".to_string(),
+            video_id: "dQw4w9WgXcQ".to_string(),
+            share_text: "texto".to_string(),
+            expires_at: None,
+            revoked: false,
+            created_at: "2026-01-01T00:00:00Z".to_string(),
+        };
+        save_share_link(&conn, &entry).expect("save");
+        assert!(revoke_share_link(&conn, "to-revoke").expect("revoke"));
+        let loaded = load_share_link_by_token(&conn, "to-revoke")
+            .expect("load")
+            .expect("exists");
+        assert!(loaded.revoked);
+    }
 }

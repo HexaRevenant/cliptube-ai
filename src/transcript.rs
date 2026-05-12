@@ -6,6 +6,7 @@ use reqwest::{Client, cookie::Jar};
 use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
+use tokio::time::{Duration, sleep};
 
 use crate::transcript_helpers::{extract_api_key, extract_video_id, parse_transcript_xml};
 
@@ -21,6 +22,7 @@ pub struct TranscriptSegment {
 }
 
 impl TranscriptSegment {
+    #[allow(dead_code)]
     pub fn start_formatted(&self) -> String {
         let total_secs = self.start as u64;
         let hours = total_secs / 3600;
@@ -70,19 +72,32 @@ impl TranscriptService {
     ) -> Result<TranscriptBundle, TranscriptError> {
         let video_id = extract_video_id(input)?;
         let source_url = WATCH_URL.replace("{video_id}", &video_id);
+        let mut primary_error: Option<TranscriptError> = None;
+        for attempt in 0..3 {
+            match self
+                .fetch_from_youtube_internal(&video_id, &source_url, requested_languages)
+                .await
+            {
+                Ok(bundle) => return Ok(bundle),
+                Err(error) => {
+                    let retryable = error.is_retryable();
+                    primary_error = Some(error);
+                    if attempt < 2 && retryable {
+                        sleep(Duration::from_millis(400 * (attempt + 1) as u64)).await;
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
 
+        let primary_error = primary_error.unwrap_or(TranscriptError::NoTranscriptAvailable);
         match self
-            .fetch_from_youtube_internal(&video_id, &source_url, requested_languages)
+            .fetch_with_ytdlp_fallback(&video_id, &source_url, requested_languages)
             .await
         {
             Ok(bundle) => Ok(bundle),
-            Err(primary_error) => match self
-                .fetch_with_ytdlp_fallback(&video_id, &source_url, requested_languages)
-                .await
-            {
-                Ok(bundle) => Ok(bundle),
-                Err(_) => Err(primary_error),
-            },
+            Err(_) => Err(primary_error),
         }
     }
 
@@ -132,18 +147,34 @@ impl TranscriptService {
         source_url: &str,
         requested_languages: &[String],
     ) -> Result<TranscriptBundle, TranscriptError> {
-        let output = Command::new("yt-dlp")
-            .args([
-                "--dump-single-json",
-                "--no-warnings",
-                "--skip-download",
-                source_url,
-            ])
-            .output()?;
+        let mut cmd = Command::new("yt-dlp");
+        cmd.args(["--dump-single-json", "--no-warnings", "--skip-download"]);
+
+        if let Ok(browser) = std::env::var("YTDLP_COOKIES_FROM_BROWSER") {
+            let browser = browser.trim();
+            if !browser.is_empty() {
+                cmd.args(["--cookies-from-browser", browser]);
+            }
+        }
+
+        if let Ok(cookie_file) = std::env::var("YTDLP_COOKIES_FILE") {
+            let cookie_file = cookie_file.trim();
+            if !cookie_file.is_empty() {
+                cmd.args(["--cookies", cookie_file]);
+            }
+        }
+
+        let output = cmd.arg(source_url).output()?;
         if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            let stderr = if stderr.is_empty() {
+                "sin detalle adicional".to_string()
+            } else {
+                stderr.chars().take(320).collect::<String>()
+            };
             return Err(TranscriptError::YtDlp(format!(
-                "yt-dlp devolvió estado {}",
-                output.status
+                "yt-dlp devolvió estado {} ({stderr})",
+                output.status,
             )));
         }
         let meta: Value = serde_json::from_slice(&output.stdout)?;
@@ -225,6 +256,12 @@ impl TranscriptService {
 
     async fn fetch_html(&self, url: &str) -> Result<String, TranscriptError> {
         let response = self.client.get(url).send().await?.error_for_status()?;
+        let final_url = response.url().to_string();
+        if final_url.contains("google.com/sorry") {
+            return Err(TranscriptError::AntiBotBlocked(
+                "YouTube/Google pidió validación anti-bot para esta IP. Intenta de nuevo más tarde o usa cookies para el fallback de yt-dlp (YTDLP_COOKIES_FROM_BROWSER / YTDLP_COOKIES_FILE).".into(),
+            ));
+        }
         Ok(response.text().await?)
     }
 
@@ -309,7 +346,10 @@ fn select_ytdlp_caption_track(
         .or_else(|| generated.into_iter().next())
 }
 
-fn extract_ytdlp_tracks(map_value: Option<&Value>, is_generated: bool) -> Vec<(String, String, bool)> {
+fn extract_ytdlp_tracks(
+    map_value: Option<&Value>,
+    is_generated: bool,
+) -> Vec<(String, String, bool)> {
     let mut tracks = Vec::new();
     let Some(map) = map_value.and_then(|v| v.as_object()) else {
         return tracks;
@@ -322,8 +362,14 @@ fn extract_ytdlp_tracks(map_value: Option<&Value>, is_generated: bool) -> Vec<(S
         let mut picked_url: Option<String> = None;
 
         for entry in arr {
-            let ext = entry.get("ext").and_then(|v| v.as_str()).unwrap_or_default();
-            let url = entry.get("url").and_then(|v| v.as_str()).unwrap_or_default();
+            let ext = entry
+                .get("ext")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
+            let url = entry
+                .get("url")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default();
             if url.is_empty() {
                 continue;
             }
@@ -345,7 +391,8 @@ fn extract_ytdlp_tracks(map_value: Option<&Value>, is_generated: bool) -> Vec<(S
 }
 
 fn parse_vtt_segments(vtt: &str) -> Result<Vec<TranscriptSegment>, TranscriptError> {
-    let tag_re = Regex::new(r"<[^>]+>").map_err(|e| TranscriptError::TranscriptParse(e.to_string()))?;
+    let tag_re =
+        Regex::new(r"<[^>]+>").map_err(|e| TranscriptError::TranscriptParse(e.to_string()))?;
     let mut segments = Vec::new();
     let mut lines = vtt.lines().peekable();
 
@@ -559,6 +606,8 @@ pub enum TranscriptError {
     TranscriptsDisabled,
     #[error("No pude crear la cookie de consentimiento de YouTube")]
     ConsentCookieFailed,
+    #[error("YouTube bloqueó temporalmente la extracción (anti-bot): {0}")]
+    AntiBotBlocked(String),
     #[error("El video no se puede reproducir: {0}")]
     VideoUnplayable(String),
     #[error("Error parseando la transcripción: {0}")]
@@ -573,6 +622,34 @@ pub enum TranscriptError {
     Xml(#[from] roxmltree::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl TranscriptError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            TranscriptError::AntiBotBlocked(_) => false,
+            TranscriptError::InvalidUrlOrVideoId => false,
+            TranscriptError::NoTranscriptAvailable => false,
+            TranscriptError::TranscriptsDisabled => false,
+            TranscriptError::VideoUnplayable(_) => false,
+            TranscriptError::Http(err) => {
+                err.is_timeout()
+                    || err.is_connect()
+                    || err.status().is_some_and(|status| status.is_server_error())
+            }
+            _ => true,
+        }
+    }
+
+    pub fn is_fatal_for_batch(&self) -> bool {
+        match self {
+            TranscriptError::AntiBotBlocked(_) | TranscriptError::ConsentCookieFailed => true,
+            TranscriptError::Http(err) => err
+                .status()
+                .is_some_and(|status| status.as_u16() == 401 || status.as_u16() == 403),
+            _ => false,
+        }
+    }
 }
 
 fn extract_video_metadata(html: &str) -> (Option<String>, Option<String>) {

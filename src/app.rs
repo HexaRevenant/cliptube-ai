@@ -4,6 +4,7 @@ mod render;
 mod render_chat;
 mod render_main;
 mod render_topbar;
+mod use_cases;
 mod view_model;
 
 use std::{
@@ -14,10 +15,11 @@ use std::{
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
+use tracing::{error, info};
 
 use crate::{
     ai::SummaryService,
-    db::{self, open_db, VideoEntry},
+    db::{self, VideoEntry, open_db},
     transcript::{TranscriptSegment, TranscriptService},
     ui::{components::install_multilingual_fonts, i18n::UiLanguage},
 };
@@ -169,6 +171,9 @@ pub struct YoutubeNativeApp {
     summary: String,
     key_points_text: String,
     share_text: String,
+    latest_share_link: String,
+    share_link_token_input: String,
+    share_link_resolved_text: String,
     transcript_text: String,
     chat_input: String,
     ollama_host: String,
@@ -238,11 +243,11 @@ impl YoutubeNativeApp {
 
         let db_conn = match open_db() {
             Ok(conn) => {
-                eprintln!("[DB] Database opened successfully at {:?}", db::db_path());
+                info!("[DB] Database opened successfully at {:?}", db::db_path());
                 Some(conn)
             }
             Err(e) => {
-                eprintln!("[DB] Failed to open database: {e}");
+                error!("[DB] Failed to open database: {e}");
                 None
             }
         };
@@ -282,6 +287,9 @@ impl YoutubeNativeApp {
             summary: String::new(),
             key_points_text: String::new(),
             share_text: String::new(),
+            latest_share_link: String::new(),
+            share_link_token_input: String::new(),
+            share_link_resolved_text: String::new(),
             transcript_text: String::new(),
             chat_input: String::new(),
             ollama_host: persisted

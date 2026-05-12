@@ -3,6 +3,7 @@ mod text;
 
 use serde::Deserialize;
 use thiserror::Error;
+use tokio::time::{Duration, sleep};
 
 use self::{
     prompts::{build_chat_text, build_chunk_prompt, build_combine_prompt, build_final_prompt},
@@ -336,13 +337,7 @@ impl SummaryService {
             "format": "json"
         });
 
-        let res = self
-            .client
-            .post(&self.endpoint)
-            .json(&payload)
-            .send()
-            .await?
-            .error_for_status()?;
+        let res = self.post_with_retry(&payload).await?;
         let chat_res: OllamaChatResponse = res.json().await?;
         let content = chat_res.message.content.trim().to_string();
 
@@ -365,13 +360,7 @@ impl SummaryService {
             "stream": false
         });
 
-        let res = self
-            .client
-            .post(&self.endpoint)
-            .json(&payload)
-            .send()
-            .await?
-            .error_for_status()?;
+        let res = self.post_with_retry(&payload).await?;
         let chat_res: OllamaChatResponse = res.json().await?;
         let content = chat_res.message.content.trim().to_string();
 
@@ -380,6 +369,38 @@ impl SummaryService {
         }
 
         Ok(content)
+    }
+
+    async fn post_with_retry(
+        &self,
+        payload: &serde_json::Value,
+    ) -> Result<reqwest::Response, SummaryError> {
+        let mut last_error: Option<SummaryError> = None;
+        for attempt in 0..3 {
+            match self
+                .client
+                .post(&self.endpoint)
+                .json(payload)
+                .send()
+                .await
+                .and_then(|response| response.error_for_status())
+            {
+                Ok(response) => return Ok(response),
+                Err(error) => {
+                    let summary_error = SummaryError::from(error);
+                    let retryable = summary_error.is_retryable();
+                    last_error = Some(summary_error);
+                    if retryable && attempt < 2 {
+                        sleep(Duration::from_millis(400 * (attempt + 1) as u64)).await;
+                        continue;
+                    }
+                    break;
+                }
+            }
+        }
+        Err(last_error.unwrap_or_else(|| {
+            SummaryError::InvalidResponse("No se pudo obtener respuesta de Ollama".to_string())
+        }))
     }
 
     fn local_fallback(
@@ -508,4 +529,36 @@ pub enum SummaryError {
     Http(#[from] reqwest::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
+}
+
+impl SummaryError {
+    pub fn is_retryable(&self) -> bool {
+        match self {
+            SummaryError::Http(err) => {
+                err.is_timeout()
+                    || err.is_connect()
+                    || err
+                        .status()
+                        .is_some_and(|status| status.is_server_error() || status.as_u16() == 429)
+            }
+            SummaryError::EmptyResponse => true,
+            SummaryError::InvalidResponse(_) | SummaryError::Json(_) => false,
+        }
+    }
+
+    pub fn is_fatal_for_batch(&self) -> bool {
+        match self {
+            SummaryError::Http(err) => {
+                err.is_connect()
+                    || err.is_timeout()
+                    || err.status().is_some_and(|status| {
+                        status.as_u16() == 401
+                            || status.as_u16() == 403
+                            || status.as_u16() == 404
+                            || status.as_u16() == 503
+                    })
+            }
+            _ => false,
+        }
+    }
 }

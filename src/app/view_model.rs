@@ -1,86 +1,13 @@
 use crate::{
-    ai::{self, AiSummary, SummaryService},
-    db::VideoEntry,
+    ai::{self, AiSummary},
+    share_text::build_share_text,
     transcript::{self, TranscriptBundle},
     ui::i18n::UiLanguage,
 };
 
-use super::{AppState, ResultViewModel};
+use super::ResultViewModel;
 
-pub(super) async fn run_analysis(
-    state: &AppState,
-    summary_service: &SummaryService,
-    url: &str,
-    requested_languages: &[String],
-    output_style: ai::OutputStyle,
-    output_style_index: usize,
-    ui_language: UiLanguage,
-) -> Result<ResultViewModel, AppError> {
-    let transcript = state
-        .transcript_service
-        .fetch(url, requested_languages)
-        .await?;
-
-    let ai_summary = summary_service
-        .summarize(&transcript, output_style, ui_language.code())
-        .await?;
-
-    Ok(to_view_model(
-        transcript,
-        ai_summary,
-        output_style,
-        output_style_index,
-        ui_language,
-        summary_service.model_name().to_string(),
-        summary_service.endpoint().to_string(),
-    ))
-}
-
-pub(super) async fn rerun_summary_from_stored(
-    entry: &VideoEntry,
-    segments: Vec<transcript::TranscriptSegment>,
-    summary_service: &SummaryService,
-    output_style: ai::OutputStyle,
-    output_style_index: usize,
-    ui_language: UiLanguage,
-) -> Result<ResultViewModel, AppError> {
-    if entry.transcript_text.trim().is_empty() {
-        return Err(AppError::Data(
-            "No hay transcript guardado para regenerar resumen".to_string(),
-        ));
-    }
-
-    let transcript = TranscriptBundle {
-        source_url: entry.source_url.clone(),
-        video_id: entry.video_id.clone(),
-        title: entry.title.clone(),
-        channel: entry.channel.clone(),
-        language_label: if entry.language_label.trim().is_empty() {
-            "No especificado".to_string()
-        } else {
-            entry.language_label.clone()
-        },
-        is_generated: entry.is_generated,
-        full_text: entry.transcript_text.clone(),
-        segments,
-    };
-
-    let ai_summary = summary_service
-        .summarize(&transcript, output_style, ui_language.code())
-        .await?;
-
-    Ok(to_view_model(
-        transcript,
-        ai_summary,
-        output_style,
-        output_style_index,
-        ui_language,
-        summary_service.model_name().to_string(),
-        summary_service.endpoint().to_string(),
-    ))
-}
-
-fn to_view_model(
+pub(super) fn to_view_model(
     transcript: TranscriptBundle,
     summary: AiSummary,
     output_style: ai::OutputStyle,
@@ -106,14 +33,13 @@ fn to_view_model(
             .join("\n")
     };
 
-    let final_share_text = format!(
-        "{}\n\n\n{}\n{}\n\n\n{}\n{}\n\n\n{}",
-        summary.chat_text.trim(),
+    let final_share_text = build_share_text(
+        &summary.chat_text,
         ui_language.text("summary"),
-        summary.summary.trim(),
+        &summary.summary,
         ui_language.text("key_points"),
-        key_points_text.trim(),
-        transcript.source_url
+        &key_points_text,
+        &transcript.source_url,
     );
 
     let video_meta = format!(

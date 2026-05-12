@@ -186,3 +186,29 @@ pub(crate) fn dedup_items(items: Vec<String>) -> Vec<String> {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{clean_transcript, limit_chars, split_into_chunks};
+
+    #[test]
+    fn clean_transcript_removes_noise_and_duplicates() {
+        let raw = "[Music]\nHola hola hola\nHola hola hola\nContenido real de prueba";
+        let cleaned = clean_transcript(raw);
+        assert!(cleaned.contains("Contenido real de prueba"));
+        assert!(!cleaned.contains("[Music]"));
+    }
+
+    #[test]
+    fn limit_chars_respects_max() {
+        let text = "abcdef";
+        assert_eq!(limit_chars(text, 3), "abc");
+    }
+
+    #[test]
+    fn split_into_chunks_respects_max_chunks() {
+        let input = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl";
+        let chunks = split_into_chunks(input, 3, 2);
+        assert!(chunks.len() <= 2);
+    }
+}

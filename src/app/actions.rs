@@ -4,14 +4,11 @@ use super::*;
 use crate::ai::{self, SummaryService};
 use crate::db::{self, VideoEntry};
 use crate::history;
+use crate::share_link::ShareLinkService;
+use tracing::{error, info, warn};
 
 fn summary_needs_reprocess(entry: &VideoEntry) -> bool {
-    let status = entry.ai_status.to_lowercase();
-    entry.summary.trim().is_empty()
-        || status.contains("429")
-        || status.contains("too many requests")
-        || status.contains("fallback extractivo")
-        || status.contains("no tiene el formato esperado")
+    entry.summary_reprocess_needed()
 }
 
 impl YoutubeNativeApp {
@@ -122,7 +119,8 @@ impl YoutubeNativeApp {
                     if let Ok(Some(entry)) = db::load_video_by_id(conn, &video_id) {
                         if !entry.summary.is_empty() {
                             self.load_video_from_db(&entry);
-                            self.status_text = self.ui_language.text("status_loaded_from_history").into();
+                            self.status_text =
+                                self.ui_language.text("status_loaded_from_history").into();
                             return;
                         }
                     }
@@ -149,7 +147,7 @@ impl YoutubeNativeApp {
         };
 
         self.runtime.spawn(async move {
-            let message = match super::view_model::run_analysis(
+            let message = match super::use_cases::run_analysis(
                 &state,
                 &summary_service,
                 &url,
@@ -185,6 +183,7 @@ impl YoutubeNativeApp {
                         content: self.ui_language.text("status_context_ready").into(),
                     });
                     self.save_current_result_to_db(&result);
+                    self.share_link_resolved_text.clear();
                 }
                 BackgroundMessage::ChatSuccess {
                     reply,
@@ -244,17 +243,19 @@ impl YoutubeNativeApp {
                     self.auto_current = current;
                     self.auto_total = total;
                     let remaining = total.saturating_sub(current);
-                    self.auto_status =
-                        format!("Analizando video {current}/{total} (faltan {remaining}): {video_id}");
+                    self.auto_status = format!(
+                        "Analizando video {current}/{total} (faltan {remaining}): {video_id}"
+                    );
                     self.url = format!("https://www.youtube.com/watch?v={}", video_id);
                 }
                 BackgroundMessage::AutoQueueItemComplete { video_id, result } => {
                     self.segments = result.segments.clone();
                     self.save_current_result_to_db(&result);
                     let remaining = self.auto_total.saturating_sub(self.auto_current);
-                    self.auto_status =
-                        format!("✅ Video {} guardado | {}/{} completados | {} faltan",
-                            video_id, self.auto_current, self.auto_total, remaining);
+                    self.auto_status = format!(
+                        "✅ Video {} guardado | {}/{} completados | {} faltan",
+                        video_id, self.auto_current, self.auto_total, remaining
+                    );
                     if !self.auto_stop_requested {
                         self.process_next_auto_queue();
                     }
@@ -270,9 +271,10 @@ impl YoutubeNativeApp {
                         self.status_text = format!("Error fatal en auto-proceso: {error}");
                     } else {
                         let remaining = self.auto_total.saturating_sub(self.auto_current);
-                        self.auto_status =
-                            format!("⚠️  Error en {} (continúa): {} | {}/{} | {} faltan",
-                                video_id, error, self.auto_current, self.auto_total, remaining);
+                        self.auto_status = format!(
+                            "⚠️  Error en {} (continúa): {} | {}/{} | {} faltan",
+                            video_id, error, self.auto_current, self.auto_total, remaining
+                        );
                         if !self.auto_stop_requested {
                             self.process_next_auto_queue();
                         }
@@ -280,7 +282,8 @@ impl YoutubeNativeApp {
                 }
                 BackgroundMessage::AutoQueueComplete => {
                     self.auto_processing = false;
-                    self.auto_status = "🎉 Auto-proceso completado - todos los videos analizados".to_string();
+                    self.auto_status =
+                        "🎉 Auto-proceso completado - todos los videos analizados".to_string();
                     if let Some(conn) = self.db_conn.as_mut() {
                         if let Ok(list) = db::load_videos(conn) {
                             self.history_entries = list;
@@ -298,27 +301,42 @@ impl YoutubeNativeApp {
                         format!("Reprocesando tiempos {current}/{total}: {video_id}");
                 }
                 BackgroundMessage::ReprocessSegmentsItemComplete { video_id } => {
-                    let remaining = self.reprocess_segments_total.saturating_sub(self.reprocess_segments_current);
-                    self.reprocess_segments_status =
-                        format!("✅ Tiempos guardados para {} | {}/{} | {} faltan",
-                            video_id, self.reprocess_segments_current, self.reprocess_segments_total, remaining);
+                    let remaining = self
+                        .reprocess_segments_total
+                        .saturating_sub(self.reprocess_segments_current);
+                    self.reprocess_segments_status = format!(
+                        "✅ Tiempos guardados para {} | {}/{} | {} faltan",
+                        video_id,
+                        self.reprocess_segments_current,
+                        self.reprocess_segments_total,
+                        remaining
+                    );
                     if !self.reprocess_segments_stop_requested {
                         self.process_next_reprocess_segment();
                     }
                 }
                 BackgroundMessage::ReprocessSegmentsError { video_id, error } => {
-                    let remaining = self.reprocess_segments_total.saturating_sub(self.reprocess_segments_current);
-                    self.reprocess_segments_status =
-                        format!("⚠️ Error en {}: {} | {}/{} | {} faltan",
-                            video_id, error, self.reprocess_segments_current, self.reprocess_segments_total, remaining);
+                    let remaining = self
+                        .reprocess_segments_total
+                        .saturating_sub(self.reprocess_segments_current);
+                    self.reprocess_segments_status = format!(
+                        "⚠️ Error en {}: {} | {}/{} | {} faltan",
+                        video_id,
+                        error,
+                        self.reprocess_segments_current,
+                        self.reprocess_segments_total,
+                        remaining
+                    );
                     if !self.reprocess_segments_stop_requested {
                         self.process_next_reprocess_segment();
                     }
                 }
                 BackgroundMessage::ReprocessSegmentsComplete { processed, failed } => {
                     self.reprocess_segments_processing = false;
-                    self.reprocess_segments_status =
-                        format!("🎉 Reproceso completado: {} guardados, {} fallidos", processed, failed);
+                    self.reprocess_segments_status = format!(
+                        "🎉 Reproceso completado: {} guardados, {} fallidos",
+                        processed, failed
+                    );
                     if let Some(conn) = self.db_conn.as_mut() {
                         if let Ok(list) = db::load_videos(conn) {
                             self.history_entries = list;
@@ -390,6 +408,9 @@ impl YoutubeNativeApp {
                     self.summary.clear();
                     self.key_points_text.clear();
                     self.share_text.clear();
+                    self.latest_share_link.clear();
+                    self.share_link_token_input.clear();
+                    self.share_link_resolved_text.clear();
                     self.transcript_text.clear();
                 }
             }
@@ -520,14 +541,14 @@ impl YoutubeNativeApp {
 
     fn save_current_result_to_db(&mut self, result: &ResultViewModel) {
         let Some(conn) = self.db_conn.as_mut() else {
-            eprintln!("[DB] db_conn is None, cannot save");
+            warn!("[DB] db_conn is None, cannot save");
             return;
         };
         if result.video_id.is_empty() {
-            eprintln!("[DB] video_id is empty, cannot save");
+            warn!("[DB] video_id is empty, cannot save");
             return;
         }
-        eprintln!("[DB] Saving video_id={}", result.video_id);
+        info!("[DB] Saving video_id={}", result.video_id);
         let now = chrono::Local::now().to_rfc3339();
         let entry = VideoEntry {
             id: 0,
@@ -556,11 +577,24 @@ impl YoutubeNativeApp {
             created_at: now,
         };
         if let Err(e) = db::save_video(conn, &entry) {
-            eprintln!("[DB] Failed to save video to db: {e}");
+            error!("[DB] Failed to save video to db: {e}");
         } else {
-            eprintln!("[DB] Video saved successfully");
+            info!("[DB] Video saved successfully");
             if let Err(e) = db::save_segments(conn, &result.video_id, &result.segments) {
-                eprintln!("[DB] Failed to save segments: {e}");
+                error!("[DB] Failed to save segments: {e}");
+            }
+            let share_service = ShareLinkService::from_env();
+            match share_service.create_link(conn, &result.video_id, &result.share_text) {
+                Ok(link) => {
+                    let base = std::env::var("CLIPTUBE_SHARE_BASE_URL")
+                        .unwrap_or_else(|_| "cliptube://share/".to_string());
+                    let share_url = format!("{}/{}", base.trim_end_matches('/'), link.token);
+                    info!("[SHARE] Link generado: {share_url}");
+                    self.latest_share_link = share_url;
+                }
+                Err(e) => {
+                    error!("[SHARE] No se pudo generar link: {e}");
+                }
             }
             if let Ok(list) = db::load_videos(conn) {
                 self.history_entries = list;
@@ -631,9 +665,12 @@ impl YoutubeNativeApp {
                                     current: i + 1,
                                     total,
                                 });
-                                let exists = db::video_exists(&conn, &entry.video_id).unwrap_or(false);
+                                let exists =
+                                    db::video_exists(&conn, &entry.video_id).unwrap_or(false);
                                 if !exists {
-                                    let watched_at_sortable = entry.watched_at.as_ref()
+                                    let watched_at_sortable = entry
+                                        .watched_at
+                                        .as_ref()
                                         .map(|d| db::parse_spanish_date(d))
                                         .unwrap_or(0);
                                     let db_entry = VideoEntry {
@@ -678,7 +715,7 @@ impl YoutubeNativeApp {
                                     ) {
                                         Ok(true) => updated_count += 1,
                                         Ok(false) => {}
-                                        Err(e) => eprintln!("Update history fields failed: {e}"),
+                                        Err(e) => error!("Update history fields failed: {e}"),
                                     }
                                 }
                             }
@@ -774,29 +811,26 @@ impl YoutubeNativeApp {
             tokio::time::sleep(Duration::from_secs(1)).await;
 
             match state.transcript_service.fetch(&url, &languages).await {
-                Ok(bundle) => {
-                    match db::open_db() {
-                        Ok(conn) => {
-                            if let Err(e) = db::save_segments(&conn, &video_id, &bundle.segments) {
-                                let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
-                                    video_id: video_id.clone(),
-                                    error: format!("DB error: {e}"),
-                                });
-                            } else {
-                                let _ = tx
-                                    .send(BackgroundMessage::ReprocessSegmentsItemComplete {
-                                        video_id: video_id.clone(),
-                                    });
-                            }
-                        }
-                        Err(e) => {
+                Ok(bundle) => match db::open_db() {
+                    Ok(conn) => {
+                        if let Err(e) = db::save_segments(&conn, &video_id, &bundle.segments) {
                             let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
                                 video_id: video_id.clone(),
-                                error: format!("DB open error: {e}"),
+                                error: format!("DB error: {e}"),
+                            });
+                        } else {
+                            let _ = tx.send(BackgroundMessage::ReprocessSegmentsItemComplete {
+                                video_id: video_id.clone(),
                             });
                         }
                     }
-                }
+                    Err(e) => {
+                        let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
+                            video_id: video_id.clone(),
+                            error: format!("DB open error: {e}"),
+                        });
+                    }
+                },
                 Err(error) => {
                     let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
                         video_id: video_id.clone(),
@@ -817,13 +851,11 @@ impl YoutubeNativeApp {
         };
         // Load all videos without summary
         let pending: Vec<String> = match db::load_videos(conn) {
-            Ok(entries) => {
-                entries
-                    .into_iter()
-                    .filter(|e| e.summary.is_empty())
-                    .map(|e| e.source_url)
-                    .collect()
-            }
+            Ok(entries) => entries
+                .into_iter()
+                .filter(|e| e.summary.is_empty())
+                .map(|e| e.source_url)
+                .collect(),
             Err(e) => {
                 self.auto_status = format!("Error cargando videos: {e}");
                 return;
@@ -937,7 +969,7 @@ impl YoutubeNativeApp {
                 Ok(conn) => match db::load_video_by_id(&conn, &video_id) {
                     Ok(Some(entry)) => {
                         let segments = db::load_segments(&conn, &video_id).unwrap_or_default();
-                        match super::view_model::rerun_summary_from_stored(
+                        match super::use_cases::rerun_summary_from_stored(
                             &entry,
                             segments,
                             &summary_service,
@@ -948,10 +980,11 @@ impl YoutubeNativeApp {
                         .await
                         {
                             Ok(result) => {
-                                let _ = tx.send(BackgroundMessage::ReprocessSummariesItemComplete {
-                                    video_id: video_id.clone(),
-                                    result,
-                                });
+                                let _ =
+                                    tx.send(BackgroundMessage::ReprocessSummariesItemComplete {
+                                        video_id: video_id.clone(),
+                                        result,
+                                    });
                             }
                             Err(error) => {
                                 let _ = tx.send(BackgroundMessage::ReprocessSummariesError {
@@ -1040,7 +1073,7 @@ impl YoutubeNativeApp {
             // Wait 1 second between videos to avoid rate limiting
             tokio::time::sleep(Duration::from_secs(1)).await;
 
-            match super::view_model::run_analysis(
+            match super::use_cases::run_analysis(
                 &state,
                 &summary_service,
                 &url,
@@ -1071,9 +1104,11 @@ impl YoutubeNativeApp {
     }
 
     pub(super) fn delete_history_entry(&mut self, video_id: &str) {
-        let Some(conn) = self.db_conn.as_mut() else { return };
+        let Some(conn) = self.db_conn.as_mut() else {
+            return;
+        };
         if let Err(e) = db::delete_video(conn, video_id) {
-            eprintln!("Failed to delete video: {e}");
+            error!("Failed to delete video: {e}");
         } else if let Ok(list) = db::load_videos(conn) {
             self.history_entries = list;
         }
@@ -1090,6 +1125,84 @@ impl YoutubeNativeApp {
             },
             Err(err) => {
                 self.status_text = format!("No pude abrir el portapapeles: {err}");
+            }
+        }
+    }
+
+    pub(super) fn copy_latest_share_link(&mut self) {
+        if self.latest_share_link.trim().is_empty() {
+            self.status_text = "No hay link compartible para copiar".to_string();
+            return;
+        }
+        match Clipboard::new() {
+            Ok(mut cb) => match cb.set_text(self.latest_share_link.clone()) {
+                Ok(()) => {
+                    self.status_text = "Link compartible copiado".to_string();
+                    self.copy_feedback_started_at = Some(Instant::now());
+                }
+                Err(err) => self.status_text = format!("No pude copiar al portapapeles: {err}"),
+            },
+            Err(err) => {
+                self.status_text = format!("No pude abrir el portapapeles: {err}");
+            }
+        }
+    }
+
+    pub(super) fn resolve_share_link(&mut self) {
+        let token = self
+            .share_link_token_input
+            .trim()
+            .split('/')
+            .next_back()
+            .unwrap_or_default()
+            .to_string();
+        if token.is_empty() {
+            self.status_text = "Ingresa un token o URL de link".to_string();
+            return;
+        }
+        let Some(conn) = self.db_conn.as_ref() else {
+            self.status_text = "DB no disponible".to_string();
+            return;
+        };
+        let service = ShareLinkService::from_env();
+        match service.resolve_link(conn, &token) {
+            Ok(entry) => {
+                self.share_link_resolved_text = entry.share_text;
+                self.status_text = "Link resuelto correctamente".to_string();
+            }
+            Err(e) => {
+                self.status_text = format!("No se pudo resolver link: {e}");
+            }
+        }
+    }
+
+    pub(super) fn revoke_share_link_by_input(&mut self) {
+        let token = self
+            .share_link_token_input
+            .trim()
+            .split('/')
+            .next_back()
+            .unwrap_or_default()
+            .to_string();
+        if token.is_empty() {
+            self.status_text = "Ingresa un token o URL de link".to_string();
+            return;
+        }
+        let Some(conn) = self.db_conn.as_ref() else {
+            self.status_text = "DB no disponible".to_string();
+            return;
+        };
+        let service = ShareLinkService::from_env();
+        match service.revoke_link(conn, &token) {
+            Ok(true) => {
+                self.status_text = "Link revocado".to_string();
+                self.share_link_resolved_text.clear();
+            }
+            Ok(false) => {
+                self.status_text = "No existe ese link".to_string();
+            }
+            Err(e) => {
+                self.status_text = format!("No se pudo revocar link: {e}");
             }
         }
     }
@@ -1140,28 +1253,12 @@ impl YoutubeNativeApp {
         self.history_file_path = self.file_browser_current_dir.to_string_lossy().to_string();
         self.show_file_browser = false;
     }
-
 }
 
 fn is_fatal_error(error: &super::view_model::AppError) -> bool {
     match error {
-        super::view_model::AppError::Transcript(te) => {
-            let err_str = te.to_string().to_lowercase();
-            err_str.contains("429")
-                || err_str.contains("too many requests")
-                || err_str.contains("banned")
-                || err_str.contains("rate limit")
-                || err_str.contains("consent")
-                || err_str.contains("forbidden")
-                || err_str.contains("unauthorized")
-        }
-        super::view_model::AppError::Summary(se) => {
-            let err_str = se.to_string().to_lowercase();
-            err_str.contains("connection refused")
-                || err_str.contains("timeout")
-                || err_str.contains("model not found")
-                || err_str.contains("service unavailable")
-        }
+        super::view_model::AppError::Transcript(te) => te.is_fatal_for_batch(),
+        super::view_model::AppError::Summary(se) => se.is_fatal_for_batch(),
         super::view_model::AppError::Data(_) => false,
     }
 }

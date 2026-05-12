@@ -1,15 +1,27 @@
 mod ai;
 mod app;
+mod config;
 mod db;
 mod history;
+mod share_link;
+mod share_text;
 mod transcript;
 mod transcript_helpers;
 mod ui;
 
 use app::YoutubeNativeApp;
 use eframe::{NativeOptions, egui};
+use tracing::error;
+use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> Result<(), eframe::Error> {
+    init_tracing();
+
+    if let Err(error) = config::validate_startup_config() {
+        error!("[CONFIG] Error de configuración: {error}");
+        std::process::exit(2);
+    }
+
     let icon = load_embedded_svg_icon();
 
     let options = NativeOptions {
@@ -27,6 +39,11 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(|cc| Ok(Box::new(YoutubeNativeApp::new(cc)))),
     )
+}
+
+fn init_tracing() {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let _ = fmt().with_env_filter(filter).try_init();
 }
 
 fn load_embedded_svg_icon() -> egui::viewport::IconData {

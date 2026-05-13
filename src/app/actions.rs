@@ -12,6 +12,78 @@ fn summary_needs_reprocess(entry: &VideoEntry) -> bool {
 }
 
 impl YoutubeNativeApp {
+    pub(super) fn refresh_history_page(&mut self) {
+        let Some(conn) = self.db_conn.as_ref() else {
+            self.history_entries.clear();
+            self.history_total = 0;
+            self.history_page = 0;
+            return;
+        };
+        self.history_total = db::count_videos(conn).map(|v| v as usize).unwrap_or(0);
+        let max_page = self.history_total.saturating_sub(1) / super::HISTORY_UI_LIMIT;
+        if self.history_page > max_page {
+            self.history_page = max_page;
+        }
+        let offset = self.history_page * super::HISTORY_UI_LIMIT;
+        self.history_entries =
+            db::load_videos_page(conn, offset, super::HISTORY_UI_LIMIT).unwrap_or_default();
+    }
+
+    pub(super) fn history_prev_page(&mut self) {
+        if self.history_page > 0 {
+            self.history_page -= 1;
+            self.refresh_history_page();
+        }
+    }
+
+    pub(super) fn history_next_page(&mut self) {
+        let max_page = self.history_total.saturating_sub(1) / super::HISTORY_UI_LIMIT;
+        if self.history_page < max_page {
+            self.history_page += 1;
+            self.refresh_history_page();
+        }
+    }
+
+    pub(super) fn invalidate_dashboard_counts(&mut self) {
+        self.dashboard_last_refresh = None;
+    }
+
+    pub(super) fn maybe_refresh_dashboard_counts_async(&mut self) {
+        if self.dashboard_refresh_in_flight {
+            return;
+        }
+        if let Some(last) = self.dashboard_last_refresh
+            && last.elapsed() < super::DASHBOARD_REFRESH_INTERVAL
+        {
+            return;
+        }
+        self.dashboard_refresh_in_flight = true;
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let counts = match db::open_db() {
+                Ok(conn) => super::DashboardCounts {
+                    pending: db::count_pending_summaries(&conn)
+                        .map(|v| v as usize)
+                        .unwrap_or(0),
+                    retryable: db::count_retryable_summaries(&conn)
+                        .map(|v| v as usize)
+                        .unwrap_or(0),
+                    missing_segments: db::count_videos_without_segments(&conn)
+                        .map(|v| v as usize)
+                        .unwrap_or(0),
+                    retryable_with_transcript: db::count_retryable_summaries_with_transcript(&conn)
+                        .map(|v| v as usize)
+                        .unwrap_or(0),
+                    missing_transcripts: db::count_missing_transcripts(&conn)
+                        .map(|v| v as usize)
+                        .unwrap_or(0),
+                },
+                Err(_) => super::DashboardCounts::default(),
+            };
+            let _ = tx.send(BackgroundMessage::DashboardCountsUpdated { counts });
+        });
+    }
+
     pub(super) fn switch_ui_language(&mut self, new_language: UiLanguage) {
         if self.ui_language == new_language {
             return;
@@ -103,12 +175,14 @@ impl YoutubeNativeApp {
 
     pub(super) fn start_analysis(&mut self) {
         if self.busy {
+            info!("start_analysis ignored: busy=true");
             return;
         }
 
         let url = self.url.trim().to_string();
         if url.is_empty() {
             self.status_text = self.ui_language.text("status_need_url").into();
+            warn!("start_analysis aborted: empty url");
             return;
         }
 
@@ -118,6 +192,7 @@ impl YoutubeNativeApp {
                 if let Some(conn) = self.db_conn.as_mut() {
                     if let Ok(Some(entry)) = db::load_video_by_id(conn, &video_id) {
                         if !entry.summary.is_empty() {
+                            info!("start_analysis cache hit: video_id={video_id}");
                             self.load_video_from_db(&entry);
                             self.status_text =
                                 self.ui_language.text("status_loaded_from_history").into();
@@ -130,6 +205,10 @@ impl YoutubeNativeApp {
 
         self.busy = true;
         self.status_text = self.ui_language.text("status_fetching").into();
+        info!(
+            "start_analysis queued: url={} languages={} output_style_index={} model={}",
+            url, self.languages, self.output_style_index, self.model_name
+        );
 
         let state = self.state.clone();
         let tx = self.tx.clone();
@@ -140,9 +219,12 @@ impl YoutubeNativeApp {
         let summary_service = match self.summary_service_for_current_settings() {
             Ok(service) => service,
             Err(error) => {
-                self.status_text = error;
-                self.busy = false;
-                return;
+                warn!(
+                    "Configuración Ollama inválida para análisis. Usando fallback de servicio por defecto: {error}"
+                );
+                self.status_text =
+                    format!("{error} · usando configuración por defecto de Ollama");
+                (*self.state.summary_service).clone()
             }
         };
 
@@ -170,6 +252,10 @@ impl YoutubeNativeApp {
             self.busy = false;
             match message {
                 BackgroundMessage::Success(result) => {
+                    info!(
+                        "analysis success: video_id={} transcript_chars={} ai_status={}",
+                        result.video_id, result.transcript_char_count, result.ai_status
+                    );
                     self.source_url = result.source_url.clone();
                     self.video_meta = result.video_meta.clone();
                     self.summary = result.summary.clone();
@@ -184,11 +270,17 @@ impl YoutubeNativeApp {
                     });
                     self.save_current_result_to_db(&result);
                     self.share_link_resolved_text.clear();
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::ChatSuccess {
                     reply,
                     replace_share_text,
                 } => {
+                    info!(
+                        "chat success: replace_share_text={} reply_chars={}",
+                        replace_share_text,
+                        reply.chars().count()
+                    );
                     if replace_share_text {
                         self.share_text = reply.clone();
                         self.status_text = self.ui_language.text("status_improved").into();
@@ -202,6 +294,7 @@ impl YoutubeNativeApp {
                     });
                 }
                 BackgroundMessage::ModelsLoaded(models) => {
+                    info!("models loaded: count={}", models.len());
                     if !models.is_empty() {
                         self.model_options = models;
                         if !self
@@ -234,6 +327,8 @@ impl YoutubeNativeApp {
                     self.history_import_status =
                         format!("Nuevos: {new_count} | Actualizados: {updated_count}");
                     self.importing_history = false;
+                    self.refresh_history_page();
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::AutoQueueProgress {
                     current,
@@ -259,12 +354,17 @@ impl YoutubeNativeApp {
                     if !self.auto_stop_requested {
                         self.process_next_auto_queue();
                     }
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::AutoQueueError {
                     video_id,
                     error,
                     is_fatal,
                 } => {
+                    warn!(
+                        "auto_queue error: video_id={} is_fatal={} error={}",
+                        video_id, is_fatal, error
+                    );
                     if is_fatal {
                         self.auto_processing = false;
                         self.auto_status = format!("🛑 DETENIDO en video {}: {}", video_id, error);
@@ -284,11 +384,8 @@ impl YoutubeNativeApp {
                     self.auto_processing = false;
                     self.auto_status =
                         "🎉 Auto-proceso completado - todos los videos analizados".to_string();
-                    if let Some(conn) = self.db_conn.as_mut() {
-                        if let Ok(list) = db::load_videos(conn) {
-                            self.history_entries = list;
-                        }
-                    }
+                    self.refresh_history_page();
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::ReprocessSegmentsProgress {
                     current,
@@ -297,51 +394,85 @@ impl YoutubeNativeApp {
                 } => {
                     self.reprocess_segments_current = current;
                     self.reprocess_segments_total = total;
-                    self.reprocess_segments_status =
-                        format!("Reprocesando tiempos {current}/{total}: {video_id}");
+                    self.reprocess_segments_status = if self.transcript_only_mode {
+                        format!("Capturando transcript {current}/{total}: {video_id}")
+                    } else {
+                        format!("Reprocesando tiempos {current}/{total}: {video_id}")
+                    };
                 }
                 BackgroundMessage::ReprocessSegmentsItemComplete { video_id } => {
                     let remaining = self
                         .reprocess_segments_total
                         .saturating_sub(self.reprocess_segments_current);
-                    self.reprocess_segments_status = format!(
-                        "✅ Tiempos guardados para {} | {}/{} | {} faltan",
-                        video_id,
-                        self.reprocess_segments_current,
-                        self.reprocess_segments_total,
-                        remaining
-                    );
+                    self.reprocess_segments_status = if self.transcript_only_mode {
+                        format!(
+                            "✅ Transcript guardado para {} | {}/{} | {} faltan",
+                            video_id,
+                            self.reprocess_segments_current,
+                            self.reprocess_segments_total,
+                            remaining
+                        )
+                    } else {
+                        format!(
+                            "✅ Tiempos guardados para {} | {}/{} | {} faltan",
+                            video_id,
+                            self.reprocess_segments_current,
+                            self.reprocess_segments_total,
+                            remaining
+                        )
+                    };
                     if !self.reprocess_segments_stop_requested {
                         self.process_next_reprocess_segment();
                     }
                 }
-                BackgroundMessage::ReprocessSegmentsError { video_id, error } => {
+                BackgroundMessage::ReprocessSegmentsError {
+                    video_id,
+                    error,
+                    is_fatal,
+                } => {
+                    warn!(
+                        "reprocess_segments error: video_id={} error={}",
+                        video_id, error
+                    );
                     let remaining = self
                         .reprocess_segments_total
                         .saturating_sub(self.reprocess_segments_current);
                     self.reprocess_segments_status = format!(
-                        "⚠️ Error en {}: {} | {}/{} | {} faltan",
+                        "⚠️ Error en {}: {}{} | {}/{} | {} faltan",
                         video_id,
                         error,
+                        if is_fatal { " (fatal)" } else { "" },
                         self.reprocess_segments_current,
                         self.reprocess_segments_total,
                         remaining
                     );
-                    if !self.reprocess_segments_stop_requested {
+                    if is_fatal {
+                        self.reprocess_segments_processing = false;
+                        self.reprocess_segments_stop_requested = true;
+                        self.status_text = format!(
+                            "🛑 Captura/reproceso detenido por bloqueo anti-bot/fatal: {}",
+                            error
+                        );
+                    } else if !self.reprocess_segments_stop_requested {
                         self.process_next_reprocess_segment();
                     }
                 }
                 BackgroundMessage::ReprocessSegmentsComplete { processed, failed } => {
                     self.reprocess_segments_processing = false;
-                    self.reprocess_segments_status = format!(
-                        "🎉 Reproceso completado: {} guardados, {} fallidos",
-                        processed, failed
-                    );
-                    if let Some(conn) = self.db_conn.as_mut() {
-                        if let Ok(list) = db::load_videos(conn) {
-                            self.history_entries = list;
-                        }
-                    }
+                    self.reprocess_segments_status = if self.transcript_only_mode {
+                        format!(
+                            "🎉 Captura de transcript completada: {} guardados, {} fallidos",
+                            processed, failed
+                        )
+                    } else {
+                        format!(
+                            "🎉 Reproceso completado: {} guardados, {} fallidos",
+                            processed, failed
+                        )
+                    };
+                    self.transcript_only_mode = false;
+                    self.refresh_history_page();
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::ReprocessSummariesProgress {
                     current,
@@ -369,20 +500,37 @@ impl YoutubeNativeApp {
                     if !self.reprocess_summaries_stop_requested {
                         self.process_next_reprocess_summary();
                     }
+                    self.invalidate_dashboard_counts();
                 }
-                BackgroundMessage::ReprocessSummariesError { video_id, error } => {
+                BackgroundMessage::ReprocessSummariesError {
+                    video_id,
+                    error,
+                    is_fatal,
+                } => {
+                    warn!(
+                        "reprocess_summaries error: video_id={} error={}",
+                        video_id, error
+                    );
                     let remaining = self
                         .reprocess_summaries_total
                         .saturating_sub(self.reprocess_summaries_current);
                     self.reprocess_summaries_status = format!(
-                        "⚠️ Error en resumen {}: {} | {}/{} | {} faltan",
+                        "⚠️ Error en resumen {}: {}{} | {}/{} | {} faltan",
                         video_id,
                         error,
+                        if is_fatal { " (fatal)" } else { "" },
                         self.reprocess_summaries_current,
                         self.reprocess_summaries_total,
                         remaining
                     );
-                    if !self.reprocess_summaries_stop_requested {
+                    if is_fatal {
+                        self.reprocess_summaries_processing = false;
+                        self.reprocess_summaries_stop_requested = true;
+                        self.status_text = format!(
+                            "🛑 Reproceso de resúmenes detenido por error fatal: {}",
+                            error
+                        );
+                    } else if !self.reprocess_summaries_stop_requested {
                         self.process_next_reprocess_summary();
                     }
                 }
@@ -392,17 +540,16 @@ impl YoutubeNativeApp {
                         "🎉 Reproceso de resúmenes completado: {} regenerados, {} fallidos",
                         processed, failed
                     );
-                    if let Some(conn) = self.db_conn.as_mut() {
-                        if let Ok(list) = db::load_videos(conn) {
-                            self.history_entries = list;
-                        }
-                    }
+                    self.refresh_history_page();
+                    self.invalidate_dashboard_counts();
                 }
                 BackgroundMessage::Error(error) => {
+                    error!("background error: {error}");
                     self.status_text = format!("Error: {error}");
                     self.importing_history = false;
                     self.auto_processing = false;
                     self.reprocess_summaries_processing = false;
+                    self.whisper_processing = false;
                     self.source_url.clear();
                     self.video_meta.clear();
                     self.summary.clear();
@@ -412,6 +559,31 @@ impl YoutubeNativeApp {
                     self.share_link_token_input.clear();
                     self.share_link_resolved_text.clear();
                     self.transcript_text.clear();
+                    self.invalidate_dashboard_counts();
+                }
+                BackgroundMessage::WhisperListProgress { current, total } => {
+                    self.whisper_current = current;
+                    self.whisper_total = total;
+                    self.whisper_status = format!("Preparando lista Whisper {current}/{total}");
+                }
+                BackgroundMessage::WhisperListComplete { total, content } => {
+                    self.whisper_processing = false;
+                    self.whisper_candidates_text = content;
+                    let was_stopped = self.whisper_stop_requested;
+                    self.whisper_stop_requested = false;
+                    self.whisper_status = if total == 0 {
+                        "No hay pendientes para Whisper".to_string()
+                    } else if was_stopped {
+                        format!("Lista Whisper parcial lista: {total} videos")
+                    } else {
+                        format!("Lista Whisper lista: {total} videos")
+                    };
+                    self.invalidate_dashboard_counts();
+                }
+                BackgroundMessage::DashboardCountsUpdated { counts } => {
+                    self.dashboard_counts = counts;
+                    self.dashboard_last_refresh = Some(Instant::now());
+                    self.dashboard_refresh_in_flight = false;
                 }
             }
         }
@@ -497,8 +669,10 @@ impl YoutubeNativeApp {
         let summary_service = match self.summary_service_for_current_settings() {
             Ok(service) => service,
             Err(error) => {
-                let _ = self.tx.send(BackgroundMessage::Error(error));
-                return;
+                warn!(
+                    "Configuración Ollama inválida para chat. Usando fallback de servicio por defecto: {error}"
+                );
+                (*self.state.summary_service).clone()
             }
         };
 
@@ -596,9 +770,7 @@ impl YoutubeNativeApp {
                     error!("[SHARE] No se pudo generar link: {e}");
                 }
             }
-            if let Ok(list) = db::load_videos(conn) {
-                self.history_entries = list;
-            }
+            self.refresh_history_page();
         }
     }
 
@@ -755,6 +927,7 @@ impl YoutubeNativeApp {
             return;
         }
         self.reprocess_segments_processing = true;
+        self.transcript_only_mode = false;
         self.reprocess_segments_stop_requested = false;
         self.reprocess_segments_queue = pending;
         self.reprocess_segments_current = 0;
@@ -766,10 +939,51 @@ impl YoutubeNativeApp {
         self.process_next_reprocess_segment();
     }
 
+    pub(super) fn start_transcript_only_processing(&mut self) {
+        if self.reprocess_segments_processing {
+            return;
+        }
+        let Some(conn) = self.db_conn.as_ref() else {
+            self.reprocess_segments_status = "DB no disponible".to_string();
+            return;
+        };
+        let pending: Vec<String> = match db::load_videos(conn) {
+            Ok(entries) => entries
+                .into_iter()
+                .filter(|e| e.transcript_text.trim().is_empty())
+                .map(|e| e.source_url)
+                .collect(),
+            Err(e) => {
+                self.reprocess_segments_status = format!("Error cargando videos: {e}");
+                return;
+            }
+        };
+        if pending.is_empty() {
+            self.reprocess_segments_status = "No hay videos sin transcript".to_string();
+            return;
+        }
+        self.reprocess_segments_processing = true;
+        self.reprocess_segments_stop_requested = false;
+        self.transcript_only_mode = true;
+        self.reprocess_segments_queue = pending;
+        self.reprocess_segments_current = 0;
+        self.reprocess_segments_total = self.reprocess_segments_queue.len();
+        self.reprocess_segments_status = format!(
+            "Iniciando captura solo transcript para {} videos (pausa 5s)...",
+            self.reprocess_segments_total
+        );
+        self.process_next_reprocess_segment();
+    }
+
     pub(super) fn stop_reprocess_segments(&mut self) {
         self.reprocess_segments_stop_requested = true;
         self.reprocess_segments_processing = false;
-        self.reprocess_segments_status = "Reproceso de tiempos detenido por usuario".to_string();
+        self.reprocess_segments_status = if self.transcript_only_mode {
+            "Captura de transcript detenida por usuario".to_string()
+        } else {
+            "Reproceso de tiempos detenido por usuario".to_string()
+        };
+        self.transcript_only_mode = false;
     }
 
     fn process_next_reprocess_segment(&mut self) {
@@ -792,6 +1006,7 @@ impl YoutubeNativeApp {
                 let _ = self.tx.send(BackgroundMessage::ReprocessSegmentsError {
                     video_id: url,
                     error: "URL inválida".to_string(),
+                    is_fatal: false,
                 });
                 return;
             }
@@ -808,15 +1023,35 @@ impl YoutubeNativeApp {
         let languages = parse_languages(&self.languages);
 
         self.runtime.spawn(async move {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            let delay_ms = std::env::var("CLIPTUBE_TRANSCRIPT_ONLY_DELAY_MS")
+                .ok()
+                .and_then(|v| v.parse::<u64>().ok())
+                .unwrap_or(5000);
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
             match state.transcript_service.fetch(&url, &languages).await {
                 Ok(bundle) => match db::open_db() {
                     Ok(conn) => {
+                        if let Err(e) = db::update_transcript_text(
+                            &conn,
+                            &video_id,
+                            &bundle.full_text,
+                            bundle.full_text.chars().count() as i64,
+                            &bundle.language_label,
+                            bundle.is_generated,
+                        ) {
+                            let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
+                                video_id: video_id.clone(),
+                                error: format!("DB transcript update error: {e}"),
+                                is_fatal: false,
+                            });
+                            return;
+                        }
                         if let Err(e) = db::save_segments(&conn, &video_id, &bundle.segments) {
                             let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
                                 video_id: video_id.clone(),
                                 error: format!("DB error: {e}"),
+                                is_fatal: false,
                             });
                         } else {
                             let _ = tx.send(BackgroundMessage::ReprocessSegmentsItemComplete {
@@ -828,13 +1063,16 @@ impl YoutubeNativeApp {
                         let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
                             video_id: video_id.clone(),
                             error: format!("DB open error: {e}"),
+                            is_fatal: false,
                         });
                     }
                 },
                 Err(error) => {
+                    let is_fatal = error.is_fatal_for_batch();
                     let _ = tx.send(BackgroundMessage::ReprocessSegmentsError {
                         video_id: video_id.clone(),
                         error: error.to_string(),
+                        is_fatal,
                     });
                 }
             }
@@ -958,8 +1196,10 @@ impl YoutubeNativeApp {
         let summary_service = match self.summary_service_for_current_settings() {
             Ok(service) => service,
             Err(error) => {
-                let _ = tx.send(BackgroundMessage::ReprocessSummariesError { video_id, error });
-                return;
+                warn!(
+                    "Configuración Ollama inválida para reproceso de resúmenes. Usando fallback de servicio por defecto: {error}"
+                );
+                (*self.state.summary_service).clone()
             }
         };
 
@@ -990,6 +1230,7 @@ impl YoutubeNativeApp {
                                 let _ = tx.send(BackgroundMessage::ReprocessSummariesError {
                                     video_id: video_id.clone(),
                                     error: error.to_string(),
+                                    is_fatal: is_fatal_error(&error),
                                 });
                             }
                         }
@@ -998,12 +1239,14 @@ impl YoutubeNativeApp {
                         let _ = tx.send(BackgroundMessage::ReprocessSummariesError {
                             video_id: video_id.clone(),
                             error: "No existe en DB".to_string(),
+                            is_fatal: false,
                         });
                     }
                     Err(e) => {
                         let _ = tx.send(BackgroundMessage::ReprocessSummariesError {
                             video_id: video_id.clone(),
                             error: format!("DB error: {e}"),
+                            is_fatal: false,
                         });
                     }
                 },
@@ -1011,6 +1254,7 @@ impl YoutubeNativeApp {
                     let _ = tx.send(BackgroundMessage::ReprocessSummariesError {
                         video_id: video_id.clone(),
                         error: format!("DB open error: {e}"),
+                        is_fatal: false,
                     });
                 }
             }
@@ -1060,12 +1304,10 @@ impl YoutubeNativeApp {
         let summary_service = match self.summary_service_for_current_settings() {
             Ok(service) => service,
             Err(error) => {
-                let _ = tx.send(BackgroundMessage::AutoQueueError {
-                    video_id,
-                    error,
-                    is_fatal: true,
-                });
-                return;
+                warn!(
+                    "Configuración Ollama inválida para auto-proceso. Usando fallback de servicio por defecto: {error}"
+                );
+                (*self.state.summary_service).clone()
             }
         };
 
@@ -1109,8 +1351,9 @@ impl YoutubeNativeApp {
         };
         if let Err(e) = db::delete_video(conn, video_id) {
             error!("Failed to delete video: {e}");
-        } else if let Ok(list) = db::load_videos(conn) {
-            self.history_entries = list;
+        } else {
+            self.refresh_history_page();
+            self.invalidate_dashboard_counts();
         }
     }
 
@@ -1138,6 +1381,88 @@ impl YoutubeNativeApp {
             Ok(mut cb) => match cb.set_text(self.latest_share_link.clone()) {
                 Ok(()) => {
                     self.status_text = "Link compartible copiado".to_string();
+                    self.copy_feedback_started_at = Some(Instant::now());
+                }
+                Err(err) => self.status_text = format!("No pude copiar al portapapeles: {err}"),
+            },
+            Err(err) => {
+                self.status_text = format!("No pude abrir el portapapeles: {err}");
+            }
+        }
+    }
+
+    pub(super) fn prepare_whisper_candidates(&mut self) {
+        if self.whisper_processing {
+            return;
+        }
+        let Some(conn) = self.db_conn.as_ref() else {
+            self.status_text = "DB no disponible".to_string();
+            return;
+        };
+        let entries = match db::load_videos_without_transcript(conn) {
+            Ok(v) => v,
+            Err(e) => {
+                self.status_text = format!("Error preparando lista Whisper: {e}");
+                return;
+            }
+        };
+        self.whisper_processing = true;
+        self.whisper_stop_requested = false;
+        self.whisper_cancel_token =
+            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.whisper_current = 0;
+        self.whisper_total = entries.len();
+        self.whisper_status = format!("Iniciando lista Whisper para {} videos...", entries.len());
+        let tx = self.tx.clone();
+        let stop_flag_task = self.whisper_cancel_token.clone();
+        self.whisper_status = format!(
+            "Iniciando lista Whisper para {} videos... (puedes detener)",
+            entries.len()
+        );
+        self.runtime.spawn(async move {
+            let total = entries.len();
+            let mut lines = Vec::with_capacity(total);
+            for (idx, e) in entries.into_iter().enumerate() {
+                if stop_flag_task.load(std::sync::atomic::Ordering::Relaxed) {
+                    let _ = tx.send(BackgroundMessage::WhisperListComplete {
+                        total: idx,
+                        content: lines.join("\n"),
+                    });
+                    return;
+                }
+                lines.push(format!("{} | {}", e.video_id, e.source_url));
+                let _ = tx.send(BackgroundMessage::WhisperListProgress {
+                    current: idx + 1,
+                    total,
+                });
+                if idx % 200 == 0 {
+                    tokio::task::yield_now().await;
+                }
+            }
+            let _ = tx.send(BackgroundMessage::WhisperListComplete {
+                total,
+                content: lines.join("\n"),
+            });
+        });
+    }
+
+    pub(super) fn stop_whisper_candidates(&mut self) {
+        self.whisper_stop_requested = true;
+        self.whisper_cancel_token
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.whisper_processing = false;
+        self.whisper_status = "Generación de lista Whisper detenida".to_string();
+    }
+
+    pub(super) fn copy_whisper_candidates(&mut self) {
+        if self.whisper_candidates_text.trim().is_empty() {
+            self.status_text = "Primero genera la lista Whisper".to_string();
+            return;
+        }
+        match Clipboard::new() {
+            Ok(mut cb) => match cb.set_text(self.whisper_candidates_text.clone()) {
+                Ok(()) => {
+                    self.status_text = "Lista Whisper copiada".to_string();
                     self.copy_feedback_started_at = Some(Instant::now());
                 }
                 Err(err) => self.status_text = format!("No pude copiar al portapapeles: {err}"),

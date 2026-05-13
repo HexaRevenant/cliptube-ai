@@ -4,6 +4,7 @@ mod text;
 use serde::Deserialize;
 use thiserror::Error;
 use tokio::time::{Duration, sleep};
+use tracing::{info, warn};
 
 use self::{
     prompts::{build_chat_text, build_chunk_prompt, build_combine_prompt, build_final_prompt},
@@ -179,6 +180,12 @@ impl SummaryService {
         output_style: OutputStyle,
         response_language: &str,
     ) -> Result<AiSummary, SummaryError> {
+        info!(
+            "ai summarize start: model={} lang={} transcript_chars={}",
+            self.model,
+            response_language,
+            transcript.full_text.chars().count()
+        );
         let cleaned = clean_transcript(&transcript.full_text);
         let limited = limit_chars(&cleaned, self.max_chars);
         let chunks = split_into_chunks(&limited, self.chunk_size, self.max_chunks);
@@ -188,6 +195,12 @@ impl SummaryService {
             .await
         {
             Ok(mut summary) => {
+                info!(
+                    "ai summarize ollama ok: model={} chunks={} summary_chars={}",
+                    self.model,
+                    chunks.len(),
+                    summary.summary.chars().count()
+                );
                 summary.status = if chunks.len() > 1 {
                     format!(
                         "Resumen IA generado con Ollama local ({}) usando {} bloques del transcript limpio.",
@@ -199,12 +212,18 @@ impl SummaryService {
                 };
                 Ok(summary)
             }
-            Err(error) => Ok(self.local_fallback(
-                transcript,
-                output_style,
-                Some(error.to_string()),
-                response_language,
-            )),
+            Err(error) => {
+                warn!(
+                    "ai summarize ollama failed -> fallback: model={} error={}",
+                    self.model, error
+                );
+                Ok(self.local_fallback(
+                    transcript,
+                    output_style,
+                    Some(error.to_string()),
+                    response_language,
+                ))
+            }
         }
     }
 

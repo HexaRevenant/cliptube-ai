@@ -7,6 +7,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use thiserror::Error;
 use tokio::time::{Duration, sleep};
+use tracing::{info, warn};
 
 use crate::transcript_helpers::{extract_api_key, extract_video_id, parse_transcript_xml};
 
@@ -72,15 +73,26 @@ impl TranscriptService {
     ) -> Result<TranscriptBundle, TranscriptError> {
         let video_id = extract_video_id(input)?;
         let source_url = WATCH_URL.replace("{video_id}", &video_id);
+        info!("transcript fetch start: video_id={video_id} input={input}");
         let mut primary_error: Option<TranscriptError> = None;
         for attempt in 0..3 {
             match self
                 .fetch_from_youtube_internal(&video_id, &source_url, requested_languages)
                 .await
             {
-                Ok(bundle) => return Ok(bundle),
+                Ok(bundle) => {
+                    info!("transcript fetch internal ok: video_id={video_id} attempt={}", attempt + 1);
+                    return Ok(bundle);
+                }
                 Err(error) => {
                     let retryable = error.is_retryable();
+                    warn!(
+                        "transcript fetch internal failed: video_id={} attempt={} retryable={} error={}",
+                        video_id,
+                        attempt + 1,
+                        retryable,
+                        error
+                    );
                     primary_error = Some(error);
                     if attempt < 2 && retryable {
                         sleep(Duration::from_millis(400 * (attempt + 1) as u64)).await;
@@ -96,8 +108,17 @@ impl TranscriptService {
             .fetch_with_ytdlp_fallback(&video_id, &source_url, requested_languages)
             .await
         {
-            Ok(bundle) => Ok(bundle),
-            Err(_) => Err(primary_error),
+            Ok(bundle) => {
+                info!("transcript fetch fallback ytdlp ok: video_id={video_id}");
+                Ok(bundle)
+            }
+            Err(err) => {
+                warn!(
+                    "transcript fetch fallback ytdlp failed: video_id={} error={} (returning primary error)",
+                    video_id, err
+                );
+                Err(primary_error)
+            }
         }
     }
 

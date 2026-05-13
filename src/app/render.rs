@@ -9,6 +9,7 @@ use crate::ui::{
 impl App for YoutubeNativeApp {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         self.handle_background_messages();
+        self.maybe_refresh_dashboard_counts_async();
 
         if self.copy_feedback_started_at.is_some() && !self.copy_feedback_active() {
             self.copy_feedback_started_at = None;

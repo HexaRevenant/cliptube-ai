@@ -51,6 +51,7 @@ impl VideoEntry {
         !self.summary.trim().is_empty()
     }
 
+    #[allow(dead_code)]
     pub fn has_transcript(&self) -> bool {
         !self.transcript_text.trim().is_empty()
     }
@@ -175,6 +176,26 @@ pub fn parse_spanish_date(date_str: &str) -> i64 {
 }
 
 pub fn db_path() -> std::path::PathBuf {
+    if let Ok(custom) = std::env::var("CLIPTUBE_DB_PATH") {
+        let custom = custom.trim();
+        if !custom.is_empty() {
+            let path = std::path::PathBuf::from(custom);
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            return path;
+        }
+    }
+
+    if let Ok(home) = std::env::var("HOME") {
+        let canonical = std::path::PathBuf::from(home)
+            .join(".local")
+            .join("share")
+            .join("cliptube");
+        let _ = std::fs::create_dir_all(&canonical);
+        return canonical.join("cliptube.db");
+    }
+
     let data_dir = dirs::data_dir().unwrap_or_else(|| {
         std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
     });
@@ -459,6 +480,46 @@ pub fn load_videos(conn: &Connection) -> Result<Vec<VideoEntry>, rusqlite::Error
     rows.collect()
 }
 
+pub fn load_videos_limited(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+    let limit = i64::try_from(limit).unwrap_or(1000);
+    let mut stmt = conn.prepare(
+        "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
+         transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
+         output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
+         FROM videos
+         ORDER BY watched_at_sortable DESC, created_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit], entry_from_row)?;
+    rows.collect()
+}
+
+pub fn count_videos(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row("SELECT COUNT(*) FROM videos", [], |row| row.get(0))
+}
+
+pub fn load_videos_page(
+    conn: &Connection,
+    offset: usize,
+    limit: usize,
+) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+    let offset = i64::try_from(offset).unwrap_or(0);
+    let limit = i64::try_from(limit).unwrap_or(10);
+    let mut stmt = conn.prepare(
+        "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
+         transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
+         output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
+         FROM videos
+         ORDER BY watched_at_sortable DESC, created_at DESC
+         LIMIT ?1 OFFSET ?2",
+    )?;
+    let rows = stmt.query_map([limit, offset], entry_from_row)?;
+    rows.collect()
+}
+
 #[allow(dead_code)]
 pub fn load_video_by_id(
     conn: &Connection,
@@ -495,6 +556,32 @@ pub fn save_segments(
             params![video_id, segment.start, segment.duration, segment.text,],
         )?;
     }
+    Ok(())
+}
+
+pub fn update_transcript_text(
+    conn: &Connection,
+    video_id: &str,
+    transcript_text: &str,
+    transcript_char_count: i64,
+    language_label: &str,
+    is_generated: bool,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE videos
+         SET transcript_text = ?1,
+             transcript_char_count = ?2,
+             language_label = CASE WHEN TRIM(COALESCE(language_label,''))='' THEN ?3 ELSE language_label END,
+             is_generated = ?4
+         WHERE video_id = ?5",
+        params![
+            transcript_text,
+            transcript_char_count,
+            language_label,
+            is_generated as i32,
+            video_id
+        ],
+    )?;
     Ok(())
 }
 
@@ -548,6 +635,75 @@ pub fn load_videos_without_segments(conn: &Connection) -> Result<Vec<VideoEntry>
     )?;
     let rows = stmt.query_map([], entry_from_row)?;
     rows.collect()
+}
+
+pub fn count_pending_summaries(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos WHERE TRIM(COALESCE(summary, '')) = ''",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn count_missing_transcripts(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos WHERE TRIM(COALESCE(transcript_text, '')) = ''",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn load_videos_without_transcript(conn: &Connection) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
+         transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
+         output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
+         FROM videos
+         WHERE TRIM(COALESCE(transcript_text, '')) = ''
+         ORDER BY watched_at_sortable DESC, created_at DESC",
+    )?;
+    let rows = stmt.query_map([], entry_from_row)?;
+    rows.collect()
+}
+
+pub fn count_retryable_summaries(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos
+         WHERE TRIM(COALESCE(summary, '')) = ''
+            OR LOWER(COALESCE(ai_status, '')) LIKE '%error en ia%'
+            OR LOWER(COALESCE(ai_status, '')) LIKE '%429%'
+            OR LOWER(COALESCE(ai_status, '')) LIKE '%too many requests%'
+            OR LOWER(COALESCE(ai_status, '')) LIKE '%fallback extractivo%'
+            OR LOWER(COALESCE(ai_status, '')) LIKE '%no tiene el formato esperado%'",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn count_retryable_summaries_with_transcript(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos
+         WHERE TRIM(COALESCE(transcript_text, '')) <> ''
+           AND (
+                TRIM(COALESCE(summary, '')) = ''
+                OR LOWER(COALESCE(ai_status, '')) LIKE '%error en ia%'
+                OR LOWER(COALESCE(ai_status, '')) LIKE '%429%'
+                OR LOWER(COALESCE(ai_status, '')) LIKE '%too many requests%'
+                OR LOWER(COALESCE(ai_status, '')) LIKE '%fallback extractivo%'
+                OR LOWER(COALESCE(ai_status, '')) LIKE '%no tiene el formato esperado%'
+           )",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn count_videos_without_segments(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos
+         WHERE video_id NOT IN (SELECT video_id FROM transcript_segments)",
+        [],
+        |row| row.get(0),
+    )
 }
 
 /// Update only history-derived fields (title, channel, watched_at) without

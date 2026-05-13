@@ -4,6 +4,7 @@ use crate::{
     transcript::{self, TranscriptBundle},
     ui::i18n::UiLanguage,
 };
+use tracing::info;
 
 use super::{AppState, ResultViewModel, view_model};
 
@@ -16,14 +17,31 @@ pub(super) async fn run_analysis(
     output_style_index: usize,
     ui_language: UiLanguage,
 ) -> Result<ResultViewModel, view_model::AppError> {
+    info!("analysis stage: transcript_fetch_start url={url}");
     let transcript = state
         .transcript_service
         .fetch(url, requested_languages)
         .await?;
+    info!(
+        "analysis stage: transcript_fetch_done video_id={} chars={} segments={}",
+        transcript.video_id,
+        transcript.full_text.chars().count(),
+        transcript.segments.len()
+    );
 
+    info!(
+        "analysis stage: summarize_start model={} endpoint={}",
+        summary_service.model_name(),
+        summary_service.endpoint()
+    );
     let ai_summary = summary_service
         .summarize(&transcript, output_style, ui_language.code())
         .await?;
+    info!(
+        "analysis stage: summarize_done summary_chars={} key_points={}",
+        ai_summary.summary.chars().count(),
+        ai_summary.key_points.len()
+    );
 
     Ok(view_model::to_view_model(
         transcript,
@@ -65,9 +83,20 @@ pub(super) async fn rerun_summary_from_stored(
         segments,
     };
 
+    info!(
+        "analysis stage: rerun_summarize_start video_id={} model={}",
+        entry.video_id,
+        summary_service.model_name()
+    );
     let ai_summary = summary_service
         .summarize(&transcript, output_style, ui_language.code())
         .await?;
+    info!(
+        "analysis stage: rerun_summarize_done video_id={} summary_chars={} key_points={}",
+        transcript.video_id,
+        ai_summary.summary.chars().count(),
+        ai_summary.key_points.len()
+    );
 
     Ok(view_model::to_view_model(
         transcript,

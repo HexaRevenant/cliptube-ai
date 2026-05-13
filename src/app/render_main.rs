@@ -338,11 +338,7 @@ impl YoutubeNativeApp {
                                 }
                             } else {
                                 // Count pending videos
-                                let pending = self
-                                    .history_entries
-                                    .iter()
-                                    .filter(|e| e.summary.is_empty())
-                                    .count();
+                                let pending = self.dashboard_counts.pending;
                                 let button_text = if pending > 0 {
                                     format!("▶ Procesar lista ({} pendientes)", pending)
                                 } else {
@@ -362,11 +358,7 @@ impl YoutubeNativeApp {
 
                         ui.add_space(LayoutSpace::XS);
                         ui.horizontal(|ui| {
-                            let retryable = self
-                                .history_entries
-                                .iter()
-                                .filter(|e| e.summary_reprocess_needed())
-                                .count();
+                            let retryable = self.dashboard_counts.retryable;
                             let button_text = if retryable > 0 {
                                 format!("🔁 Reintentar pendientes/fallidos ({retryable})")
                             } else {
@@ -390,18 +382,17 @@ impl YoutubeNativeApp {
                         ui.add_space(LayoutSpace::SM);
                         ui.horizontal(|ui| {
                             if self.reprocess_segments_processing {
-                                if ui.add(secondary_button("⏹ Detener reproceso")).clicked() {
+                                let stop_label = if self.transcript_only_mode {
+                                    "⏹ Detener captura transcript"
+                                } else {
+                                    "⏹ Detener reproceso"
+                                };
+                                if ui.add(secondary_button(stop_label)).clicked() {
                                     self.stop_reprocess_segments();
                                 }
                             } else {
                                 // Count videos without timestamps
-                                let missing = if let Some(conn) = self.db_conn.as_ref() {
-                                    db::load_videos_without_segments(conn)
-                                        .map(|v| v.len())
-                                        .unwrap_or(0)
-                                } else {
-                                    0
-                                };
+                                let missing = self.dashboard_counts.missing_segments;
                                 let button_text = if missing > 0 {
                                     format!("⏱ Reprocesar tiempos ({} sin tiempos)", missing)
                                 } else {
@@ -422,6 +413,92 @@ impl YoutubeNativeApp {
                             }
                         });
 
+                        ui.add_space(LayoutSpace::XS);
+                        ui.horizontal(|ui| {
+                            let transcript_missing = self.dashboard_counts.missing_transcripts;
+                            let button_text = if transcript_missing > 0 {
+                                format!(
+                                    "📝 Solo transcript ({} pendientes, pausa 5s)",
+                                    transcript_missing
+                                )
+                            } else {
+                                "📝 Solo transcript".to_string()
+                            };
+                            if ui
+                                .add_enabled(
+                                    !self.busy
+                                        && !self.importing_history
+                                        && !self.auto_processing
+                                        && !self.reprocess_segments_processing
+                                        && transcript_missing > 0,
+                                    secondary_button(&button_text),
+                                )
+                                .clicked()
+                            {
+                                self.start_transcript_only_processing();
+                            }
+                        });
+
+                        ui.add_space(LayoutSpace::XS);
+                        ui.horizontal(|ui| {
+                            let whisper_pending = if let Some(conn) = self.db_conn.as_ref() {
+                                db::count_missing_transcripts(conn)
+                                    .map(|v| v as usize)
+                                    .unwrap_or(0)
+                            } else {
+                                0
+                            };
+                            let whisper_button_text = if whisper_pending > 0 {
+                                format!("🧠 Whisper pendientes ({whisper_pending})")
+                            } else {
+                                "🧠 Whisper pendientes".to_string()
+                            };
+                            if self.whisper_processing {
+                                if ui.add(secondary_button("⏹ Detener Whisper")).clicked() {
+                                    self.stop_whisper_candidates();
+                                }
+                            } else if ui
+                                .add_enabled(
+                                    !self.busy && !self.importing_history && whisper_pending > 0,
+                                    secondary_button(&whisper_button_text),
+                                )
+                                .clicked()
+                            {
+                                self.prepare_whisper_candidates();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !self.busy && !self.whisper_candidates_text.trim().is_empty(),
+                                    secondary_button("📋 Copiar"),
+                                )
+                                .clicked()
+                            {
+                                self.copy_whisper_candidates();
+                            }
+                        });
+                        if self.whisper_processing && self.whisper_total > 0 {
+                            let progress = self.whisper_current as f32 / self.whisper_total as f32;
+                            ui.add(
+                                egui::ProgressBar::new(progress)
+                                    .text(format!(
+                                        "Preparando Whisper {} de {} | {}%",
+                                        self.whisper_current,
+                                        self.whisper_total,
+                                        (progress * 100.0) as u32
+                                    ))
+                                    .fill(BrandColors::VIOLET)
+                                    .desired_width(ui.available_width()),
+                            );
+                            ui.colored_label(BrandColors::VIOLET, &self.whisper_status);
+                            ui.ctx().request_repaint();
+                        } else if !self.whisper_status.is_empty() {
+                            ui.colored_label(BrandColors::VIOLET, &self.whisper_status);
+                        }
+                        if !self.whisper_candidates_text.trim().is_empty() {
+                            ui.add_space(LayoutSpace::XS);
+                            ui.add(egui::Label::new(&self.whisper_candidates_text).wrap());
+                        }
+
                         // Re-process summaries controls
                         ui.add_space(LayoutSpace::SM);
                         ui.horizontal(|ui| {
@@ -433,11 +510,7 @@ impl YoutubeNativeApp {
                                     self.stop_reprocess_summaries();
                                 }
                             } else {
-                                let retryable = self
-                                    .history_entries
-                                    .iter()
-                                    .filter(|e| e.has_transcript() && e.summary_reprocess_needed())
-                                    .count();
+                                let retryable = self.dashboard_counts.retryable_with_transcript;
                                 let button_text = if retryable > 0 {
                                     format!("🔁 Reprocesar resúmenes ({} pendientes)", retryable)
                                 } else {
@@ -492,16 +565,27 @@ impl YoutubeNativeApp {
                             let remaining = self
                                 .reprocess_segments_total
                                 .saturating_sub(self.reprocess_segments_current);
+                            let progress_text = if self.transcript_only_mode {
+                                format!(
+                                    "Capturando transcript {} de {} | {} faltan | {}%",
+                                    self.reprocess_segments_current,
+                                    self.reprocess_segments_total,
+                                    remaining,
+                                    (progress * 100.0) as u32
+                                )
+                            } else {
+                                format!(
+                                    "Reprocesando tiempos {} de {} | {} faltan | {}%",
+                                    self.reprocess_segments_current,
+                                    self.reprocess_segments_total,
+                                    remaining,
+                                    (progress * 100.0) as u32
+                                )
+                            };
                             ui.vertical(|ui| {
                                 ui.add(
                                     egui::ProgressBar::new(progress)
-                                        .text(format!(
-                                            "Reprocesando tiempos {} de {} | {} faltan | {}%",
-                                            self.reprocess_segments_current,
-                                            self.reprocess_segments_total,
-                                            remaining,
-                                            (progress * 100.0) as u32
-                                        ))
+                                        .text(progress_text)
                                         .fill(BrandColors::CYAN)
                                         .desired_width(ui.available_width()),
                                 );
@@ -554,10 +638,50 @@ impl YoutubeNativeApp {
                                 self.ui_language.text("no_history"),
                             );
                         } else {
+                            let start = self.history_page * super::HISTORY_UI_LIMIT + 1;
+                            let end =
+                                (start + self.history_entries.len().saturating_sub(1)).max(start);
+                            let max_page =
+                                self.history_total.saturating_sub(1) / super::HISTORY_UI_LIMIT;
+                            ui.colored_label(
+                                BrandColors::MUTED,
+                                format!(
+                                    "Historial {}-{} de {} (página {}/{})",
+                                    start,
+                                    end,
+                                    self.history_total,
+                                    self.history_page + 1,
+                                    max_page + 1
+                                ),
+                            );
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .add_enabled(self.history_page > 0, secondary_button("◀ Anterior"))
+                                    .clicked()
+                                {
+                                    self.history_prev_page();
+                                }
+                                if ui
+                                    .add_enabled(
+                                        self.history_page < max_page,
+                                        secondary_button("Siguiente ▶"),
+                                    )
+                                    .clicked()
+                                {
+                                    self.history_next_page();
+                                }
+                            });
+                            #[derive(Clone)]
+                            enum HistoryUiAction {
+                                Delete(String),
+                                Copy(String),
+                                Load(usize),
+                            }
+                            let mut history_action: Option<HistoryUiAction> = None;
                             egui::ScrollArea::vertical()
                                 .max_height(280.0)
                                 .show(ui, |ui| {
-                                    for entry in self.history_entries.clone() {
+                                    for (idx, entry) in self.history_entries.iter().enumerate() {
                                         ui.horizontal(|ui| {
                                             ui.vertical(|ui| {
                                                 ui.label(
@@ -584,7 +708,11 @@ impl YoutubeNativeApp {
                                                         ))
                                                         .clicked()
                                                     {
-                                                        self.delete_history_entry(&entry.video_id);
+                                                        history_action = Some(
+                                                            HistoryUiAction::Delete(
+                                                                entry.video_id.clone(),
+                                                            ),
+                                                        );
                                                     }
                                                     if ui
                                                         .add(icon_button(
@@ -593,9 +721,9 @@ impl YoutubeNativeApp {
                                                         ))
                                                         .clicked()
                                                     {
-                                                        self.copy_entry_share_text(
-                                                            &entry.share_text,
-                                                        );
+                                                        history_action = Some(HistoryUiAction::Copy(
+                                                            entry.share_text.clone(),
+                                                        ));
                                                     }
                                                     if ui
                                                         .add(icon_button(
@@ -604,7 +732,8 @@ impl YoutubeNativeApp {
                                                         ))
                                                         .clicked()
                                                     {
-                                                        self.load_video_from_db(&entry);
+                                                        history_action =
+                                                            Some(HistoryUiAction::Load(idx));
                                                     }
                                                 },
                                             );
@@ -612,6 +741,19 @@ impl YoutubeNativeApp {
                                         ui.add_space(LayoutSpace::XS);
                                     }
                                 });
+                            if let Some(action) = history_action {
+                                match action {
+                                    HistoryUiAction::Delete(video_id) => {
+                                        self.delete_history_entry(&video_id);
+                                    }
+                                    HistoryUiAction::Copy(text) => self.copy_entry_share_text(&text),
+                                    HistoryUiAction::Load(idx) => {
+                                        if let Some(entry) = self.history_entries.get(idx).cloned() {
+                                            self.load_video_from_db(&entry);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 });
@@ -679,13 +821,7 @@ impl YoutubeNativeApp {
                     });
                     if !self.share_link_resolved_text.is_empty() {
                         ui.add_space(LayoutSpace::XS);
-                        let mut resolved = self.share_link_resolved_text.clone();
-                        ui.add(
-                            egui::TextEdit::multiline(&mut resolved)
-                                .desired_width(f32::INFINITY)
-                                .desired_rows(5)
-                                .interactive(false),
-                        );
+                        ui.add(egui::Label::new(&self.share_link_resolved_text).wrap());
                     }
                 });
                 let transcript_height = (ui.available_height() - LayoutSpace::XL).max(220.0);

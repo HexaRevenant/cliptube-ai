@@ -31,6 +31,8 @@ use self::{
 
 const APP_SETTINGS_KEY: &str = "cliptube_app_settings";
 const COPY_FEEDBACK_DURATION: Duration = Duration::from_millis(1400);
+const HISTORY_UI_LIMIT: usize = 10;
+const DASHBOARD_REFRESH_INTERVAL: Duration = Duration::from_millis(1500);
 
 #[derive(Clone)]
 struct AppState {
@@ -116,6 +118,7 @@ enum BackgroundMessage {
     ReprocessSegmentsError {
         video_id: String,
         error: String,
+        is_fatal: bool,
     },
     ReprocessSegmentsComplete {
         processed: usize,
@@ -133,10 +136,22 @@ enum BackgroundMessage {
     ReprocessSummariesError {
         video_id: String,
         error: String,
+        is_fatal: bool,
     },
     ReprocessSummariesComplete {
         processed: usize,
         failed: usize,
+    },
+    WhisperListProgress {
+        current: usize,
+        total: usize,
+    },
+    WhisperListComplete {
+        total: usize,
+        content: String,
+    },
+    DashboardCountsUpdated {
+        counts: DashboardCounts,
     },
     Error(String),
 }
@@ -151,6 +166,15 @@ struct ChatMessage {
 enum ChatRole {
     User,
     Assistant,
+}
+
+#[derive(Clone, Copy, Default)]
+pub(super) struct DashboardCounts {
+    pub pending: usize,
+    pub retryable: usize,
+    pub missing_segments: usize,
+    pub retryable_with_transcript: usize,
+    pub missing_transcripts: usize,
 }
 
 pub struct YoutubeNativeApp {
@@ -174,6 +198,7 @@ pub struct YoutubeNativeApp {
     latest_share_link: String,
     share_link_token_input: String,
     share_link_resolved_text: String,
+    whisper_candidates_text: String,
     transcript_text: String,
     chat_input: String,
     ollama_host: String,
@@ -184,6 +209,8 @@ pub struct YoutubeNativeApp {
     copy_feedback_started_at: Option<Instant>,
     pub(super) db_conn: Option<rusqlite::Connection>,
     pub(super) history_entries: Vec<VideoEntry>,
+    pub(super) history_page: usize,
+    pub(super) history_total: usize,
     pub(super) show_history_panel: bool,
     pub(super) history_import_status: String,
     pub(super) history_file_path: String,
@@ -207,12 +234,22 @@ pub struct YoutubeNativeApp {
     pub(super) reprocess_segments_total: usize,
     pub(super) reprocess_segments_status: String,
     pub(super) reprocess_segments_stop_requested: bool,
+    pub(super) transcript_only_mode: bool,
     pub(super) reprocess_summaries_processing: bool,
     pub(super) reprocess_summaries_queue: Vec<String>,
     pub(super) reprocess_summaries_current: usize,
     pub(super) reprocess_summaries_total: usize,
     pub(super) reprocess_summaries_status: String,
     pub(super) reprocess_summaries_stop_requested: bool,
+    pub(super) whisper_processing: bool,
+    pub(super) whisper_stop_requested: bool,
+    pub(super) whisper_cancel_token: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub(super) whisper_status: String,
+    pub(super) whisper_current: usize,
+    pub(super) whisper_total: usize,
+    pub(super) dashboard_counts: DashboardCounts,
+    pub(super) dashboard_last_refresh: Option<Instant>,
+    pub(super) dashboard_refresh_in_flight: bool,
 }
 impl YoutubeNativeApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -253,8 +290,13 @@ impl YoutubeNativeApp {
         };
         let history_entries = db_conn
             .as_ref()
-            .and_then(|conn| db::load_videos(conn).ok())
+            .and_then(|conn| db::load_videos_limited(conn, HISTORY_UI_LIMIT).ok())
             .unwrap_or_default();
+        let history_total = db_conn
+            .as_ref()
+            .and_then(|conn| db::count_videos(conn).ok())
+            .map(|v| v as usize)
+            .unwrap_or(history_entries.len());
 
         Self {
             state: AppState {
@@ -290,6 +332,7 @@ impl YoutubeNativeApp {
             latest_share_link: String::new(),
             share_link_token_input: String::new(),
             share_link_resolved_text: String::new(),
+            whisper_candidates_text: String::new(),
             transcript_text: String::new(),
             chat_input: String::new(),
             ollama_host: persisted
@@ -318,6 +361,8 @@ impl YoutubeNativeApp {
             copy_feedback_started_at: None,
             db_conn,
             history_entries,
+            history_page: 0,
+            history_total,
             show_history_panel: false,
             history_import_status: String::new(),
             history_file_path: "/home/hexa/Descargas/Takeout/YouTube y YouTube Music/historial de videos/historial de reproducciones.html".to_string(),
@@ -341,12 +386,22 @@ impl YoutubeNativeApp {
             reprocess_segments_total: 0,
             reprocess_segments_status: String::new(),
             reprocess_segments_stop_requested: false,
+            transcript_only_mode: false,
             reprocess_summaries_processing: false,
             reprocess_summaries_queue: Vec::new(),
             reprocess_summaries_current: 0,
             reprocess_summaries_total: 0,
             reprocess_summaries_status: String::new(),
             reprocess_summaries_stop_requested: false,
+            whisper_processing: false,
+            whisper_stop_requested: false,
+            whisper_cancel_token: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            whisper_status: String::new(),
+            whisper_current: 0,
+            whisper_total: 0,
+            dashboard_counts: DashboardCounts::default(),
+            dashboard_last_refresh: None,
+            dashboard_refresh_in_flight: false,
         }
         .with_initial_model_refresh()
     }

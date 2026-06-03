@@ -247,6 +247,9 @@ pub fn open_db() -> Result<Connection, rusqlite::Error> {
             video_meta TEXT,
             watched_at TEXT,
             watched_at_sortable INTEGER DEFAULT 0,
+            transcript_error_category TEXT,
+            transcript_error_message TEXT,
+            transcript_last_attempt_at TEXT,
             created_at TEXT NOT NULL
         )",
         [],
@@ -264,6 +267,15 @@ pub fn open_db() -> Result<Connection, rusqlite::Error> {
             "UPDATE videos SET watched_at_sortable = 0 WHERE watched_at_sortable IS NULL",
             [],
         );
+    }
+    if !column_exists(&conn, "videos", "transcript_error_category")? {
+        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_error_category TEXT", []);
+    }
+    if !column_exists(&conn, "videos", "transcript_error_message")? {
+        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_error_message TEXT", []);
+    }
+    if !column_exists(&conn, "videos", "transcript_last_attempt_at")? {
+        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_last_attempt_at TEXT", []);
     }
 
     conn.execute(
@@ -572,13 +584,39 @@ pub fn update_transcript_text(
          SET transcript_text = ?1,
              transcript_char_count = ?2,
              language_label = CASE WHEN TRIM(COALESCE(language_label,''))='' THEN ?3 ELSE language_label END,
-             is_generated = ?4
+             is_generated = ?4,
+             transcript_error_category = NULL,
+             transcript_error_message = NULL,
+             transcript_last_attempt_at = ?6
          WHERE video_id = ?5",
         params![
             transcript_text,
             transcript_char_count,
             language_label,
             is_generated as i32,
+            video_id,
+            chrono::Local::now().to_rfc3339()
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn update_transcript_failure(
+    conn: &Connection,
+    video_id: &str,
+    category: &str,
+    message: &str,
+) -> Result<(), rusqlite::Error> {
+    conn.execute(
+        "UPDATE videos
+         SET transcript_error_category = ?1,
+             transcript_error_message = ?2,
+             transcript_last_attempt_at = ?3
+         WHERE video_id = ?4",
+        params![
+            category,
+            message.chars().take(500).collect::<String>(),
+            chrono::Local::now().to_rfc3339(),
             video_id
         ],
     )?;
@@ -647,7 +685,19 @@ pub fn count_pending_summaries(conn: &Connection) -> Result<i64, rusqlite::Error
 
 pub fn count_missing_transcripts(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row(
-        "SELECT COUNT(*) FROM videos WHERE TRIM(COALESCE(transcript_text, '')) = ''",
+        "SELECT COUNT(*) FROM videos
+         WHERE TRIM(COALESCE(transcript_text, '')) = ''
+           AND TRIM(COALESCE(transcript_error_category, '')) = ''",
+        [],
+        |row| row.get(0),
+    )
+}
+
+pub fn count_transcript_errors(conn: &Connection) -> Result<i64, rusqlite::Error> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM videos
+         WHERE TRIM(COALESCE(transcript_text, '')) = ''
+           AND TRIM(COALESCE(transcript_error_category, '')) <> ''",
         [],
         |row| row.get(0),
     )
@@ -660,21 +710,36 @@ pub fn load_videos_without_transcript(conn: &Connection) -> Result<Vec<VideoEntr
          output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
          FROM videos
          WHERE TRIM(COALESCE(transcript_text, '')) = ''
+           AND TRIM(COALESCE(transcript_error_category, '')) = ''
          ORDER BY watched_at_sortable DESC, created_at DESC",
     )?;
     let rows = stmt.query_map([], entry_from_row)?;
     rows.collect()
 }
 
+pub fn load_videos_with_transcript_errors_limited(
+    conn: &Connection,
+    limit: usize,
+) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+    let limit = i64::try_from(limit).unwrap_or(20);
+    let mut stmt = conn.prepare(
+        "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
+         transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
+         output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
+         FROM videos
+         WHERE TRIM(COALESCE(transcript_text, '')) = ''
+           AND TRIM(COALESCE(transcript_error_category, '')) <> ''
+         ORDER BY transcript_last_attempt_at DESC, created_at DESC
+         LIMIT ?1",
+    )?;
+    let rows = stmt.query_map([limit], entry_from_row)?;
+    rows.collect()
+}
+
 pub fn count_retryable_summaries(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row(
         "SELECT COUNT(*) FROM videos
-         WHERE TRIM(COALESCE(summary, '')) = ''
-            OR LOWER(COALESCE(ai_status, '')) LIKE '%error en ia%'
-            OR LOWER(COALESCE(ai_status, '')) LIKE '%429%'
-            OR LOWER(COALESCE(ai_status, '')) LIKE '%too many requests%'
-            OR LOWER(COALESCE(ai_status, '')) LIKE '%fallback extractivo%'
-            OR LOWER(COALESCE(ai_status, '')) LIKE '%no tiene el formato esperado%'",
+         WHERE TRIM(COALESCE(summary, '')) = ''",
         [],
         |row| row.get(0),
     )

@@ -95,18 +95,18 @@ pub struct SummaryService {
 impl SummaryService {
     pub fn from_env() -> Self {
         let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(180))
+            .timeout(std::time::Duration::from_secs(600))
             .build()
             .expect("no se pudo crear cliente HTTP");
 
         let max_chars = std::env::var("MAX_TRANSCRIPT_CHARS_FOR_AI")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(90_000);
+            .unwrap_or(400_000);
         let chunk_size = std::env::var("OLLAMA_CHUNK_SIZE")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(9_000);
+            .unwrap_or(max_chars);
         let max_chunks = std::env::var("OLLAMA_MAX_CHUNKS")
             .ok()
             .and_then(|value| value.parse::<usize>().ok())

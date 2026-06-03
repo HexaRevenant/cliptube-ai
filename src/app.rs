@@ -8,7 +8,7 @@ mod use_cases;
 mod view_model;
 
 use std::{
-    sync::Arc,
+    sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
 
@@ -20,6 +20,7 @@ use tracing::{error, info};
 use crate::{
     ai::SummaryService,
     db::{self, VideoEntry, open_db},
+    proxy::ProxyManager,
     transcript::{TranscriptSegment, TranscriptService},
     ui::{components::install_multilingual_fonts, i18n::UiLanguage},
 };
@@ -38,6 +39,7 @@ const DASHBOARD_REFRESH_INTERVAL: Duration = Duration::from_millis(1500);
 struct AppState {
     transcript_service: Arc<TranscriptService>,
     summary_service: Arc<SummaryService>,
+    proxy_manager: Arc<RwLock<ProxyManager>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -49,6 +51,10 @@ struct PersistedUiSettings {
     ollama_host: String,
     ollama_port: String,
     ollama_endpoint_override: String,
+    #[serde(default)]
+    proxy_enabled: bool,
+    #[serde(default)]
+    proxy_url: String,
 }
 
 #[derive(Clone)]
@@ -154,6 +160,7 @@ enum BackgroundMessage {
         counts: DashboardCounts,
     },
     Error(String),
+    Status(String),
 }
 
 #[derive(Clone)]
@@ -175,6 +182,7 @@ pub(super) struct DashboardCounts {
     pub missing_segments: usize,
     pub retryable_with_transcript: usize,
     pub missing_transcripts: usize,
+    pub transcript_errors: usize,
 }
 
 pub struct YoutubeNativeApp {
@@ -209,6 +217,7 @@ pub struct YoutubeNativeApp {
     copy_feedback_started_at: Option<Instant>,
     pub(super) db_conn: Option<rusqlite::Connection>,
     pub(super) history_entries: Vec<VideoEntry>,
+    pub(super) transcript_error_entries: Vec<VideoEntry>,
     pub(super) history_page: usize,
     pub(super) history_total: usize,
     pub(super) show_history_panel: bool,
@@ -220,6 +229,8 @@ pub struct YoutubeNativeApp {
     pub(super) show_file_browser: bool,
     pub(super) file_browser_current_dir: std::path::PathBuf,
     pub(super) file_browser_entries: Vec<(String, bool)>,
+    pub(super) proxy_enabled: bool,
+    pub(super) proxy_url: String,
     pub(super) force_reanalyze: bool,
     pub(super) auto_processing: bool,
     pub(super) auto_queue: Vec<String>,
@@ -250,6 +261,10 @@ pub struct YoutubeNativeApp {
     pub(super) dashboard_counts: DashboardCounts,
     pub(super) dashboard_last_refresh: Option<Instant>,
     pub(super) dashboard_refresh_in_flight: bool,
+    pub(super) transcript_fail_no_subs: Vec<String>,
+    pub(super) transcript_fail_age_restricted: Vec<String>,
+    pub(super) transcript_fail_antibot: Vec<String>,
+    pub(super) transcript_fail_other: Vec<String>,
 }
 impl YoutubeNativeApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
@@ -298,10 +313,39 @@ impl YoutubeNativeApp {
             .map(|v| v as usize)
             .unwrap_or(history_entries.len());
 
+        let persisted_proxy_url = persisted
+            .as_ref()
+            .map(|settings| settings.proxy_url.clone())
+            .filter(|u: &String| !u.trim().is_empty())
+            .unwrap_or_default();
+
+        // Si hay URL persistida, usarla. Sino, cargar desde env.
+        let proxy_manager = Arc::new(RwLock::new(ProxyManager::from_env()));
+        if !persisted_proxy_url.is_empty() {
+            if let Ok(pm) = proxy_manager.write() {
+                pm.set_proxy_url(&persisted_proxy_url);
+            }
+        }
+
+        let proxy_enabled = persisted
+            .as_ref()
+            .map(|settings| settings.proxy_enabled)
+            .unwrap_or(false);
+        if proxy_enabled {
+            if let Ok(pm) = proxy_manager.write() {
+                pm.set_enabled(true);
+            }
+        }
+
+        let transcript_service = Arc::new(TranscriptService::new_with_proxy(
+            Some(proxy_manager.clone()),
+        ));
+
         Self {
             state: AppState {
-                transcript_service: Arc::new(TranscriptService::new()),
+                transcript_service,
                 summary_service,
+                proxy_manager,
             },
             runtime: tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
@@ -361,6 +405,7 @@ impl YoutubeNativeApp {
             copy_feedback_started_at: None,
             db_conn,
             history_entries,
+            transcript_error_entries: Vec::new(),
             history_page: 0,
             history_total,
             show_history_panel: false,
@@ -372,6 +417,8 @@ impl YoutubeNativeApp {
             show_file_browser: false,
             file_browser_current_dir: std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
             file_browser_entries: Vec::new(),
+            proxy_enabled,
+            proxy_url: persisted_proxy_url,
             force_reanalyze: false,
             auto_processing: false,
             auto_queue: Vec::new(),
@@ -402,11 +449,16 @@ impl YoutubeNativeApp {
             dashboard_counts: DashboardCounts::default(),
             dashboard_last_refresh: None,
             dashboard_refresh_in_flight: false,
+            transcript_fail_no_subs: Vec::new(),
+            transcript_fail_age_restricted: Vec::new(),
+            transcript_fail_antibot: Vec::new(),
+            transcript_fail_other: Vec::new(),
         }
         .with_initial_model_refresh()
     }
 
     fn with_initial_model_refresh(mut self) -> Self {
+        self.refresh_history_page();
         self.refresh_models();
         self
     }

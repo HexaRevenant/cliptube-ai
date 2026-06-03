@@ -4,9 +4,9 @@ use super::*;
 use crate::db;
 use crate::ui::{
     components::{
-        field_label, full_width_card, full_width_title_block, icon_button, metric_chip,
-        output_style_name, primary_button, secondary_button, section_header, section_text,
-        section_text_stretch,
+        accent_dot, field_label, full_width_card, full_width_title_block, icon_button,
+        metric_chip, output_style_name, primary_button, secondary_button, section_header,
+        section_text, section_text_stretch,
     },
     theme::{BrandColors, LayoutSpace},
 };
@@ -197,6 +197,32 @@ impl YoutubeNativeApp {
                         &mut self.force_reanalyze,
                         "Forzar re-análisis (ignorar cache)",
                     );
+
+                    let mut proxy_checked = self.proxy_enabled;
+                    ui.horizontal(|ui| {
+                        if ui.checkbox(&mut proxy_checked, "🔒 Usar proxy (anti-bot)").changed() {
+                            self.toggle_proxy_enabled(proxy_checked);
+                        }
+                        let active = self.proxy_active();
+                        let color: egui::Color32 = if active {
+                            egui::Color32::from_rgb(51, 204, 51)
+                        } else {
+                            egui::Color32::from_gray(102)
+                        };
+                        accent_dot(ui, color, 4.0);
+                        ui.label(if active { "Activo" } else { "Inactivo" });
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("URL del proxy:");
+                        let response = ui.add(
+                            egui::TextEdit::singleline(&mut self.proxy_url)
+                                .hint_text("http://user:pass@host:port")
+                                .desired_width(f32::INFINITY),
+                        );
+                        if response.lost_focus() {
+                            self.sync_proxy_url();
+                        }
+                    });
 
                     ui.add_space(LayoutSpace::MD);
                     ui.horizontal_wrapped(|ui| {
@@ -475,6 +501,13 @@ impl YoutubeNativeApp {
                             {
                                 self.copy_whisper_candidates();
                             }
+                            ui.colored_label(
+                                BrandColors::MUTED,
+                                format!(
+                                    "Errores transcript persistidos: {}",
+                                    self.dashboard_counts.transcript_errors
+                                ),
+                            );
                         });
                         if self.whisper_processing && self.whisper_total > 0 {
                             let progress = self.whisper_current as f32 / self.whisper_total as f32;
@@ -599,6 +632,37 @@ impl YoutubeNativeApp {
                             ui.ctx().request_repaint();
                         } else if !self.reprocess_segments_status.is_empty() {
                             ui.colored_label(BrandColors::CYAN, &self.reprocess_segments_status);
+                        }
+                        let total_fail_buckets = self.transcript_fail_no_subs.len()
+                            + self.transcript_fail_age_restricted.len()
+                            + self.transcript_fail_antibot.len()
+                            + self.transcript_fail_other.len();
+                        if total_fail_buckets > 0 {
+                            ui.add_space(LayoutSpace::XS);
+                            ui.colored_label(
+                                BrandColors::MUTED,
+                                format!(
+                                    "Errores transcript · sin subtítulos: {} · edad/restringido: {} · anti-bot/bloqueo: {} · otros: {}",
+                                    self.transcript_fail_no_subs.len(),
+                                    self.transcript_fail_age_restricted.len(),
+                                    self.transcript_fail_antibot.len(),
+                                    self.transcript_fail_other.len()
+                                ),
+                            );
+                        }
+                        if !self.transcript_error_entries.is_empty() {
+                            ui.add_space(LayoutSpace::XS);
+                            ui.colored_label(
+                                BrandColors::MUTED,
+                                format!(
+                                    "Errores persistidos para revisar/whisper: {} (mostrando {} )",
+                                    self.transcript_error_entries.len(),
+                                    self.transcript_error_entries.len()
+                                ),
+                            );
+                            for entry in &self.transcript_error_entries {
+                                ui.label(format!("• {} | {}", entry.video_id, entry.source_url));
+                            }
                         }
 
                         if self.reprocess_summaries_processing && self.reprocess_summaries_total > 0

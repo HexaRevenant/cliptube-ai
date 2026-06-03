@@ -3,6 +3,7 @@ mod app;
 mod config;
 mod db;
 mod history;
+mod proxy;
 mod share_link;
 mod share_text;
 mod transcript;

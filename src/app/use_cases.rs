@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use crate::{
     ai::{self, SummaryService},
     db::VideoEntry,
@@ -8,6 +10,57 @@ use tracing::info;
 
 use super::{AppState, ResultViewModel, view_model};
 
+pub(super) async fn fetch_transcript(
+    state: &AppState,
+    url: &str,
+    requested_languages: &[String],
+) -> Result<TranscriptBundle, view_model::AppError> {
+    info!("fetch_transcript: url={url}");
+    let transcript = state
+        .transcript_service
+        .fetch(url, requested_languages)
+        .await?;
+    info!(
+        "fetch_transcript done: video_id={} chars={} segments={}",
+        transcript.video_id,
+        transcript.full_text.chars().count(),
+        transcript.segments.len()
+    );
+    Ok(transcript)
+}
+
+pub(super) async fn summarize_transcript(
+    summary_service: &SummaryService,
+    transcript: &TranscriptBundle,
+    output_style: ai::OutputStyle,
+    output_style_index: usize,
+    ui_language: UiLanguage,
+) -> Result<ResultViewModel, view_model::AppError> {
+    info!(
+        "summarize_transcript: video_id={} model={} endpoint={}",
+        transcript.video_id,
+        summary_service.model_name(),
+        summary_service.endpoint()
+    );
+    let ai_summary = summary_service
+        .summarize(transcript, output_style, ui_language.code())
+        .await?;
+    info!(
+        "summarize_transcript done: summary_chars={} key_points={}",
+        ai_summary.summary.chars().count(),
+        ai_summary.key_points.len()
+    );
+    Ok(view_model::to_view_model(
+        transcript.clone(),
+        ai_summary,
+        output_style,
+        output_style_index,
+        ui_language,
+        summary_service.model_name().to_string(),
+        summary_service.endpoint().to_string(),
+    ))
+}
+
 pub(super) async fn run_analysis(
     state: &AppState,
     summary_service: &SummaryService,
@@ -17,16 +70,19 @@ pub(super) async fn run_analysis(
     output_style_index: usize,
     ui_language: UiLanguage,
 ) -> Result<ResultViewModel, view_model::AppError> {
+    let total_start = Instant::now();
     info!("analysis stage: transcript_fetch_start url={url}");
     let transcript = state
         .transcript_service
         .fetch(url, requested_languages)
         .await?;
+    let fetch_elapsed = total_start.elapsed();
     info!(
-        "analysis stage: transcript_fetch_done video_id={} chars={} segments={}",
+        "analysis stage: transcript_fetch_done video_id={} chars={} segments={} fetch_time={}ms",
         transcript.video_id,
         transcript.full_text.chars().count(),
-        transcript.segments.len()
+        transcript.segments.len(),
+        fetch_elapsed.as_millis(),
     );
 
     info!(
@@ -34,13 +90,24 @@ pub(super) async fn run_analysis(
         summary_service.model_name(),
         summary_service.endpoint()
     );
+    let summarize_start = Instant::now();
     let ai_summary = summary_service
         .summarize(&transcript, output_style, ui_language.code())
         .await?;
+    let summarize_elapsed = summarize_start.elapsed();
     info!(
-        "analysis stage: summarize_done summary_chars={} key_points={}",
+        "analysis stage: summarize_done summary_chars={} key_points={} summarize_time={}ms",
         ai_summary.summary.chars().count(),
-        ai_summary.key_points.len()
+        ai_summary.key_points.len(),
+        summarize_elapsed.as_millis(),
+    );
+
+    let total_elapsed = total_start.elapsed();
+    info!(
+        "analysis stage: TOTAL fetch={}ms summarize={}ms total={}ms",
+        fetch_elapsed.as_millis(),
+        summarize_elapsed.as_millis(),
+        total_elapsed.as_millis(),
     );
 
     Ok(view_model::to_view_model(

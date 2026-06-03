@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::process::Command;
+use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use regex::Regex;
 use reqwest::{Client, cookie::Jar};
@@ -9,6 +11,7 @@ use thiserror::Error;
 use tokio::time::{Duration, sleep};
 use tracing::{info, warn};
 
+use crate::proxy::ProxyManager;
 use crate::transcript_helpers::{extract_api_key, extract_video_id, parse_transcript_xml};
 
 const WATCH_URL: &str = "https://www.youtube.com/watch?v={video_id}";
@@ -49,21 +52,93 @@ pub struct TranscriptBundle {
     pub segments: Vec<TranscriptSegment>,
 }
 
-#[derive(Clone)]
 pub struct TranscriptService {
+    proxy_manager: Option<Arc<RwLock<ProxyManager>>>,
+    inner: RwLock<TranscriptServiceInner>,
+}
+
+struct TranscriptServiceInner {
     client: Client,
+    last_built_proxy_version: u64,
 }
 
 impl TranscriptService {
+    #[allow(dead_code)]
     pub fn new() -> Self {
+        let inner = TranscriptServiceInner::new();
+        Self {
+            proxy_manager: None,
+            inner: RwLock::new(inner),
+        }
+    }
+
+    pub fn new_with_proxy(proxy_manager: Option<Arc<RwLock<ProxyManager>>>) -> Self {
+        let svc = Self {
+            proxy_manager,
+            inner: RwLock::new(TranscriptServiceInner::new()),
+        };
+        svc.rebuild_client_if_needed();
+        svc
+    }
+
+    /// Reconstruye el Client si la versión del proxy cambió
+    fn rebuild_client_if_needed(&self) {
+        let current_version = self
+            .proxy_manager
+            .as_ref()
+            .and_then(|pm| {
+                pm.read()
+                    .ok()
+                    .map(|state| if state.is_enabled() { state.version() } else { 0 })
+            })
+            .unwrap_or(0);
+
+        let mut inner = self.inner.write().expect("transcript inner lock poisoned");
+        if current_version != inner.last_built_proxy_version {
+            let mut builder = Client::builder()
+                .cookie_provider(std::sync::Arc::new(Jar::default()))
+                .user_agent(USER_AGENT);
+
+            if current_version > 0 {
+                if let Some(pm) = &self.proxy_manager {
+                    if let Ok(state) = pm.read() {
+                        if let Some(rproxy) = state.build_reqwest_proxy() {
+                            builder = builder.proxy(rproxy);
+                            info!("TranscriptService: proxy configurado (version={})", current_version);
+                        }
+                    }
+                }
+            }
+
+            if current_version == 0 {
+                builder = builder.no_proxy();
+            }
+
+            inner.client = builder.build().expect("no se pudo reconstruir cliente HTTP");
+            inner.last_built_proxy_version = current_version;
+        }
+    }
+}
+
+impl TranscriptServiceInner {
+    fn new() -> Self {
         let jar = Jar::default();
         let client = Client::builder()
             .cookie_provider(std::sync::Arc::new(jar))
             .user_agent(USER_AGENT)
             .build()
             .expect("no se pudo crear cliente HTTP");
+        Self {
+            client,
+            last_built_proxy_version: 0,
+        }
+    }
+}
 
-        Self { client }
+impl TranscriptService {
+    fn client(&self) -> Client {
+        self.inner.read().expect("transcript inner lock poisoned")
+            .client.clone()
     }
 
     pub async fn fetch(
@@ -74,18 +149,41 @@ impl TranscriptService {
         let video_id = extract_video_id(input)?;
         let source_url = WATCH_URL.replace("{video_id}", &video_id);
         info!("transcript fetch start: video_id={video_id} input={input}");
+
+        // Reconstruir cliente si cambió la configuración de proxy
+        self.rebuild_client_if_needed();
+
         let mut primary_error: Option<TranscriptError> = None;
         for attempt in 0..3 {
+            let attempt_start = Instant::now();
             match self
                 .fetch_from_youtube_internal(&video_id, &source_url, requested_languages)
                 .await
             {
                 Ok(bundle) => {
-                    info!("transcript fetch internal ok: video_id={video_id} attempt={}", attempt + 1);
+                    info!("transcript fetch internal ok: video_id={video_id} attempt={} attempt_time={}ms",
+                        attempt + 1,
+                        attempt_start.elapsed().as_millis());
                     return Ok(bundle);
                 }
                 Err(error) => {
+                    let is_anti_bot = matches!(&error, TranscriptError::AntiBotBlocked(_));
                     let retryable = error.is_retryable();
+
+                    // Si es AntiBotBlocked y tenemos proxy, rotar proxy y reintentar
+                    if is_anti_bot {
+                        if let Some(pm) = &self.proxy_manager {
+                            if let Ok(state) = pm.write() {
+                                state.mark_current_dead();
+                            }
+                            self.rebuild_client_if_needed();
+                            // Reintentar inmediatamente con el nuevo proxy
+                            info!("transcript fetch proxy rotate: video_id={} attempt={}",
+                                video_id, attempt + 1);
+                            continue;
+                        }
+                    }
+
                     warn!(
                         "transcript fetch internal failed: video_id={} attempt={} retryable={} error={}",
                         video_id,
@@ -104,12 +202,16 @@ impl TranscriptService {
         }
 
         let primary_error = primary_error.unwrap_or(TranscriptError::NoTranscriptAvailable);
+        let ytdlp_fallback_start = Instant::now();
         match self
             .fetch_with_ytdlp_fallback(&video_id, &source_url, requested_languages)
             .await
         {
             Ok(bundle) => {
-                info!("transcript fetch fallback ytdlp ok: video_id={video_id}");
+                info!(
+                    "transcript fetch fallback ytdlp ok: video_id={video_id} fallback_time={}ms",
+                    ytdlp_fallback_start.elapsed().as_millis(),
+                );
                 Ok(bundle)
             }
             Err(err) => {
@@ -168,6 +270,7 @@ impl TranscriptService {
         source_url: &str,
         requested_languages: &[String],
     ) -> Result<TranscriptBundle, TranscriptError> {
+        let total_start = Instant::now();
         let mut cmd = Command::new("yt-dlp");
         cmd.args(["--dump-single-json", "--no-warnings", "--skip-download"]);
 
@@ -185,7 +288,9 @@ impl TranscriptService {
             }
         }
 
+        let ytdlp_start = Instant::now();
         let output = cmd.arg(source_url).output()?;
+        let ytdlp_elapsed = ytdlp_start.elapsed();
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
             let stderr = if stderr.is_empty() {
@@ -193,11 +298,13 @@ impl TranscriptService {
             } else {
                 stderr.chars().take(320).collect::<String>()
             };
+            warn!("yt-dlp fallback FAILED: {}ms error={}", ytdlp_elapsed.as_millis(), stderr);
             return Err(TranscriptError::YtDlp(format!(
                 "yt-dlp devolvió estado {} ({stderr})",
                 output.status,
             )));
         }
+        info!("yt-dlp: ok elapsed={}ms", ytdlp_elapsed.as_millis());
         let meta: Value = serde_json::from_slice(&output.stdout)?;
         let (track_url, language_code, is_generated) =
             select_ytdlp_caption_track(&meta, requested_languages)
@@ -211,14 +318,16 @@ impl TranscriptService {
             format!("{track_url}?fmt=vtt")
         };
 
+        let vtt_fetch_start = Instant::now();
         let vtt = self
-            .client
+            .client()
             .get(fetch_url)
             .send()
             .await?
             .error_for_status()?
             .text()
             .await?;
+        let vtt_elapsed = vtt_fetch_start.elapsed();
 
         let segments = parse_vtt_segments(&vtt)?;
         let full_text = segments
@@ -226,6 +335,16 @@ impl TranscriptService {
             .map(|s| s.text.as_str())
             .collect::<Vec<_>>()
             .join("\n");
+
+        let total_elapsed = total_start.elapsed();
+        info!(
+            "yt-dlp fallback DONE: ytdlp={}ms vtt_fetch={}ms total={}ms segments={} chars={}",
+            ytdlp_elapsed.as_millis(),
+            vtt_elapsed.as_millis(),
+            total_elapsed.as_millis(),
+            segments.len(),
+            full_text.chars().count(),
+        );
 
         let title = meta
             .get("title")
@@ -262,7 +381,7 @@ impl TranscriptService {
 
             let cookie = format!("CONSENT=YES+{consent_value}");
             html = self
-                .client
+                .client()
                 .get(url)
                 .header("Cookie", cookie)
                 .send()
@@ -276,14 +395,26 @@ impl TranscriptService {
     }
 
     async fn fetch_html(&self, url: &str) -> Result<String, TranscriptError> {
-        let response = self.client.get(url).send().await?.error_for_status()?;
+        let req_start = Instant::now();
+        let response = self.client().get(url).send().await?.error_for_status()?;
+        let headers_elapsed = req_start.elapsed();
         let final_url = response.url().to_string();
         if final_url.contains("google.com/sorry") {
             return Err(TranscriptError::AntiBotBlocked(
                 "YouTube/Google pidió validación anti-bot para esta IP. Intenta de nuevo más tarde o usa cookies para el fallback de yt-dlp (YTDLP_COOKIES_FROM_BROWSER / YTDLP_COOKIES_FILE).".into(),
             ));
         }
-        Ok(response.text().await?)
+        let body = response.text().await?;
+        let total_elapsed = req_start.elapsed();
+        info!(
+            "fetch_html: headers={}ms body={}ms total={}ms bytes={} url={}",
+            headers_elapsed.as_millis(),
+            (total_elapsed - headers_elapsed).as_millis(),
+            total_elapsed.as_millis(),
+            body.len(),
+            url,
+        );
+        Ok(body)
     }
 
     async fn fetch_player_response(
@@ -303,7 +434,7 @@ impl TranscriptService {
 
         let url = INNERTUBE_API_URL.replace("{api_key}", api_key);
         let response = self
-            .client
+            .client()
             .post(url)
             .json(&payload)
             .send()
@@ -330,7 +461,7 @@ impl TranscriptService {
     async fn fetch_transcript_xml(&self, base_url: &str) -> Result<String, TranscriptError> {
         let clean_url = base_url.replace("&fmt=srv3", "");
         let response = self
-            .client
+            .client()
             .get(clean_url)
             .send()
             .await?
@@ -687,4 +818,81 @@ fn extract_video_metadata(html: &str) -> (Option<String>, Option<String>) {
         .map(|m| html_escape::decode_html_entities(m.as_str()).to_string());
 
     (title, channel)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ai::SummaryService;
+    use crate::ai::OutputStyle;
+
+    #[tokio::test]
+    async fn fetch_timing_test_video() {
+        let video_url = "https://www.youtube.com/watch?v=5Q7jV8TpMXA";
+        let svc = TranscriptService::new_with_proxy(None);
+        let languages = vec!["es".to_string(), "en".to_string()];
+
+        let start = Instant::now();
+        match svc.fetch(video_url, &languages).await {
+            Ok(bundle) => {
+                let elapsed = start.elapsed();
+                println!(
+                    "✅ FETCH ÉXITO: fetch_time={}ms video_id={} title={:?} chars={} segments={}",
+                    elapsed.as_millis(),
+                    bundle.video_id,
+                    bundle.title,
+                    bundle.full_text.chars().count(),
+                    bundle.segments.len(),
+                );
+            }
+            Err(err) => {
+                let elapsed = start.elapsed();
+                println!(
+                    "❌ FETCH ERROR: fetch_time={}ms error={:?}",
+                    elapsed.as_millis(),
+                    err,
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn full_pipeline_timing() {
+        let video_url = "https://www.youtube.com/watch?v=5Q7jV8TpMXA";
+        let svc = TranscriptService::new_with_proxy(None);
+        let languages = vec!["es".to_string(), "en".to_string()];
+
+        // 1. FETCH transcript
+        let fetch_start = Instant::now();
+        let bundle = svc.fetch(video_url, &languages).await.expect("fetch falló");
+        let fetch_time = fetch_start.elapsed();
+        println!(
+            "\n=== PIPELINE {} ===",
+            bundle.title.as_deref().unwrap_or("desconocido"),
+        );
+        println!("1️⃣ FETCH: {}ms ({} chars, {} segments)", fetch_time.as_millis(), bundle.full_text.chars().count(), bundle.segments.len());
+
+        // 2. SUMMARIZE con gemma4:31b-cloud (modelo cloud)
+        let summary_svc = SummaryService::from_env()
+            .with_model("gemma4:31b-cloud");
+        let summarize_start = Instant::now();
+        let ai_result = summary_svc.summarize(&bundle, OutputStyle::Chat, "es").await;
+        let summarize_time = summarize_start.elapsed();
+
+        match ai_result {
+            Ok(summary) => {
+                println!("2️⃣ SUMMARIZE: {}ms (summary={} chars, {} key points)",
+                    summarize_time.as_millis(),
+                    summary.summary.chars().count(),
+                    summary.key_points.len(),
+                );
+                let total = fetch_time + summarize_time;
+                println!("3️⃣ TOTAL: {}ms", total.as_millis());
+                println!("✅ RESUMEN: {}", &summary.summary.chars().take(200).collect::<String>());
+            }
+            Err(e) => {
+                println!("❌ SUMMARIZE ERROR: {}ms error={:?}", summarize_time.as_millis(), e);
+            }
+        }
+    }
 }

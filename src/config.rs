@@ -68,8 +68,8 @@ fn validate_proxy_url(var_name: &str, value: &str) -> Result<(), String> {
         ));
     }
 
-    let parsed = url::Url::parse(value)
-        .map_err(|_| format!("{var_name} no es una URL válida: {value}"))?;
+    let parsed =
+        url::Url::parse(value).map_err(|_| format!("{var_name} no es una URL válida: {value}"))?;
 
     if parsed.host().is_none() {
         return Err(format!("{var_name} debe tener un host: {value}"));

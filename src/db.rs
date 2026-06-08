@@ -269,13 +269,22 @@ pub fn open_db() -> Result<Connection, rusqlite::Error> {
         );
     }
     if !column_exists(&conn, "videos", "transcript_error_category")? {
-        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_error_category TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE videos ADD COLUMN transcript_error_category TEXT",
+            [],
+        );
     }
     if !column_exists(&conn, "videos", "transcript_error_message")? {
-        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_error_message TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE videos ADD COLUMN transcript_error_message TEXT",
+            [],
+        );
     }
     if !column_exists(&conn, "videos", "transcript_last_attempt_at")? {
-        let _ = conn.execute("ALTER TABLE videos ADD COLUMN transcript_last_attempt_at TEXT", []);
+        let _ = conn.execute(
+            "ALTER TABLE videos ADD COLUMN transcript_last_attempt_at TEXT",
+            [],
+        );
     }
 
     conn.execute(
@@ -677,10 +686,30 @@ pub fn load_videos_without_segments(conn: &Connection) -> Result<Vec<VideoEntry>
 
 pub fn count_pending_summaries(conn: &Connection) -> Result<i64, rusqlite::Error> {
     conn.query_row(
-        "SELECT COUNT(*) FROM videos WHERE TRIM(COALESCE(summary, '')) = ''",
+        "SELECT COUNT(*) FROM videos
+         WHERE TRIM(COALESCE(summary, '')) = ''
+           AND TRIM(COALESCE(transcript_text, '')) <> ''
+           AND TRIM(COALESCE(transcript_error_category, '')) = ''",
         [],
         |row| row.get(0),
     )
+}
+
+pub fn load_videos_pending_summaries(
+    conn: &Connection,
+) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+    let mut stmt = conn.prepare(
+        "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
+         transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
+         output_style, output_style_index, ui_language, model_name, ollama_endpoint, video_meta, watched_at, watched_at_sortable, created_at
+         FROM videos
+         WHERE TRIM(COALESCE(summary, '')) = ''
+           AND TRIM(COALESCE(transcript_text, '')) <> ''
+           AND TRIM(COALESCE(transcript_error_category, '')) = ''
+         ORDER BY watched_at_sortable DESC, created_at DESC",
+    )?;
+    let rows = stmt.query_map([], entry_from_row)?;
+    rows.collect()
 }
 
 pub fn count_missing_transcripts(conn: &Connection) -> Result<i64, rusqlite::Error> {
@@ -703,7 +732,9 @@ pub fn count_transcript_errors(conn: &Connection) -> Result<i64, rusqlite::Error
     )
 }
 
-pub fn load_videos_without_transcript(conn: &Connection) -> Result<Vec<VideoEntry>, rusqlite::Error> {
+pub fn load_videos_without_transcript(
+    conn: &Connection,
+) -> Result<Vec<VideoEntry>, rusqlite::Error> {
     let mut stmt = conn.prepare(
         "SELECT id, video_id, source_url, title, channel, summary, key_points, chat_text, share_text,
          transcript_text, transcript_char_count, ai_status, language_label, is_generated, subtitle_kind,
@@ -745,7 +776,9 @@ pub fn count_retryable_summaries(conn: &Connection) -> Result<i64, rusqlite::Err
     )
 }
 
-pub fn count_retryable_summaries_with_transcript(conn: &Connection) -> Result<i64, rusqlite::Error> {
+pub fn count_retryable_summaries_with_transcript(
+    conn: &Connection,
+) -> Result<i64, rusqlite::Error> {
     conn.query_row(
         "SELECT COUNT(*) FROM videos
          WHERE TRIM(COALESCE(transcript_text, '')) <> ''

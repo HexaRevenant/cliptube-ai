@@ -283,15 +283,7 @@ impl YoutubeNativeApp {
             .unwrap_or_else(|| summary_service.model_name().to_string());
         let (default_host, default_port, default_override) =
             ollama_settings_from_endpoint(summary_service.endpoint());
-        let mut model_options = vec![
-            default_model.clone(),
-            "gemma4:31b-cloud".to_string(),
-            "qwen3:32b".to_string(),
-            "llama3.3:70b".to_string(),
-            "mistral-large".to_string(),
-        ];
-        model_options.sort();
-        model_options.dedup();
+        let model_options = vec![default_model.clone()];
 
         let db_conn = match open_db() {
             Ok(conn) => {
@@ -337,9 +329,9 @@ impl YoutubeNativeApp {
             }
         }
 
-        let transcript_service = Arc::new(TranscriptService::new_with_proxy(
-            Some(proxy_manager.clone()),
-        ));
+        let transcript_service = Arc::new(TranscriptService::new_with_proxy(Some(
+            proxy_manager.clone(),
+        )));
 
         Self {
             state: AppState {

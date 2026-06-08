@@ -7,6 +7,15 @@
 /.env.*
 !.env.example
 
+# AI/agent config files (local)
+AGENTS.md
+SOUL.md
+.openclaw/
+.pi/
+
+# Local database
+cliptube.db
+
 .DS_Store
 Thumbs.db
 *.log

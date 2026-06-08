@@ -8,6 +8,36 @@ use crate::share_link::ShareLinkService;
 use tracing::{error, info, warn};
 
 impl YoutubeNativeApp {
+    fn persist_transcript_failure(&mut self, video_id: &str, error: &str) {
+        self.bucket_transcript_failure(video_id, error);
+
+        let Some(conn) = self.db_conn.as_ref() else {
+            warn!(
+                "No se pudo persistir el error de transcript para {}: DB no disponible | {}",
+                video_id, error
+            );
+            return;
+        };
+
+        let category = Self::classify_transcript_error(error);
+        info!(
+            "[TRANSCRIPT-FAIL] Persisting transcript failure | video_id={} category={} error={}",
+            video_id, category, error
+        );
+        if let Err(e) = db::update_transcript_failure(conn, video_id, category, error) {
+            error!(
+                "Falló persistir error de transcript: video_id={} category={} db_error={} original_error={}",
+                video_id, category, e, error
+            );
+        } else {
+            info!(
+                "[TRANSCRIPT-FAIL] Persisted OK | video_id={} category={}",
+                video_id, category
+            );
+            self.invalidate_dashboard_counts();
+        }
+    }
+
     fn clear_transcript_failure_buckets(&mut self) {
         self.transcript_fail_no_subs.clear();
         self.transcript_fail_age_restricted.clear();
@@ -38,7 +68,16 @@ impl YoutubeNativeApp {
     fn classify_transcript_error(error: &str) -> &'static str {
         let low = error.to_lowercase();
         if low.contains("subtítulos están deshabilitados")
+            || low.contains("subtitulos estan deshabilitados")
+            || low.contains("subtitles are disabled")
+            || low.contains("subtitles disabled")
+            || low.contains("transcripts disabled")
+            || low.contains("captions are disabled")
+            || low.contains("caption disabled")
             || low.contains("no tiene subtítulos")
+            || low.contains("no tiene subtitulos")
+            || low.contains("no subtitles available")
+            || low.contains("subtitle not available")
             || low.contains("no transcript")
         {
             "no_subtitles"
@@ -217,7 +256,10 @@ impl YoutubeNativeApp {
         if !self.proxy_enabled {
             return false;
         }
-        self.state.proxy_manager.read().ok()
+        self.state
+            .proxy_manager
+            .read()
+            .ok()
             .map(|pm| pm.is_enabled())
             .unwrap_or(false)
     }
@@ -265,7 +307,10 @@ impl YoutubeNativeApp {
         }
 
         if self.auto_processing || self.importing_history {
-            info!("start_analysis ignored: auto_processing={} importing_history={}", self.auto_processing, self.importing_history);
+            info!(
+                "start_analysis ignored: auto_processing={} importing_history={}",
+                self.auto_processing, self.importing_history
+            );
             self.status_text = "⏳ Esperá a que termine el procesamiento automático".into();
             return;
         }
@@ -313,8 +358,7 @@ impl YoutubeNativeApp {
                 warn!(
                     "Configuración Ollama inválida para análisis. Usando fallback de servicio por defecto: {error}"
                 );
-                self.status_text =
-                    format!("{error} · usando configuración por defecto de Ollama");
+                self.status_text = format!("{error} · usando configuración por defecto de Ollama");
                 (*self.state.summary_service).clone()
             }
         };
@@ -322,24 +366,21 @@ impl YoutubeNativeApp {
         self.runtime.spawn(async move {
             // 1. Status: fetching
             let _ = tx.send(BackgroundMessage::Status(
-                "🔍 Obteniendo transcripción de YouTube...".into()
+                "🔍 Obteniendo transcripción de YouTube...".into(),
             ));
 
-            let transcript = match super::use_cases::fetch_transcript(
-                &state, &url, &languages,
-            )
-            .await
-            {
-                Ok(t) => t,
-                Err(error) => {
-                    let _ = tx.send(BackgroundMessage::Error(error.to_string()));
-                    return;
-                }
-            };
+            let transcript =
+                match super::use_cases::fetch_transcript(&state, &url, &languages).await {
+                    Ok(t) => t,
+                    Err(error) => {
+                        let _ = tx.send(BackgroundMessage::Error(error.to_string()));
+                        return;
+                    }
+                };
 
             // 2. Status: summarizing
             let _ = tx.send(BackgroundMessage::Status(
-                "🤖 Generando resumen con IA...".into()
+                "🤖 Generando resumen con IA...".into(),
             ));
 
             let message = match super::use_cases::summarize_transcript(
@@ -488,19 +529,12 @@ impl YoutubeNativeApp {
                         "auto_queue error: video_id={} is_fatal={} error={}",
                         video_id, is_fatal, error
                     );
+                    self.persist_transcript_failure(&video_id, &error);
                     if is_fatal {
-                        if let Some(conn) = self.db_conn.as_ref() {
-                            let category = Self::classify_transcript_error(&error);
-                            let _ = db::update_transcript_failure(conn, &video_id, category, &error);
-                        }
                         self.auto_processing = false;
                         self.auto_status = format!("🛑 DETENIDO en video {}: {}", video_id, error);
                         self.status_text = format!("Error fatal en auto-proceso: {error}");
                     } else {
-                        if let Some(conn) = self.db_conn.as_ref() {
-                            let category = Self::classify_transcript_error(&error);
-                            let _ = db::update_transcript_failure(conn, &video_id, category, &error);
-                        }
                         let remaining = self.auto_total.saturating_sub(self.auto_current);
                         self.auto_status = format!(
                             "⚠️  Error en {} (continúa): {} | {}/{} | {} faltan",
@@ -577,11 +611,7 @@ impl YoutubeNativeApp {
                         self.reprocess_segments_total,
                         remaining
                     );
-                    self.bucket_transcript_failure(&video_id, &error);
-                    if let Some(conn) = self.db_conn.as_ref() {
-                        let category = Self::classify_transcript_error(&error);
-                        let _ = db::update_transcript_failure(conn, &video_id, category, &error);
-                    }
+                    self.persist_transcript_failure(&video_id, &error);
                     if is_fatal {
                         self.reprocess_segments_processing = false;
                         self.reprocess_segments_stop_requested = true;
@@ -1089,15 +1119,18 @@ impl YoutubeNativeApp {
             return;
         };
         let pending: Vec<String> = match db::load_videos_without_transcript(conn) {
-            Ok(entries) => entries
-                .into_iter()
-                .map(|e| e.source_url)
-                .collect(),
+            Ok(entries) => entries.into_iter().map(|e| e.source_url).collect(),
             Err(e) => {
                 self.reprocess_segments_status = format!("Error cargando videos: {e}");
                 return;
             }
         };
+        info!(
+            "[TRANSCRIPT-ONLY] Loaded pending transcript queue | total={} missing={} error_marked={}",
+            pending.len(),
+            db::count_missing_transcripts(conn).unwrap_or(0),
+            db::count_transcript_errors(conn).unwrap_or(0)
+        );
         if pending.is_empty() {
             self.reprocess_segments_status = "No hay videos sin transcript".to_string();
             return;
@@ -1167,7 +1200,7 @@ impl YoutubeNativeApp {
             let delay_ms = std::env::var("CLIPTUBE_TRANSCRIPT_ONLY_DELAY_MS")
                 .ok()
                 .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000);
+                .unwrap_or(3000);
             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
 
             match state.transcript_service.fetch(&url, &languages).await {
@@ -1229,7 +1262,7 @@ impl YoutubeNativeApp {
             return;
         };
         // Load all videos without summary
-        let pending: Vec<String> = match db::load_videos(conn) {
+        let pending: Vec<String> = match db::load_videos_pending_summaries(conn) {
             Ok(entries) => entries
                 .into_iter()
                 .filter(|e| e.summary.is_empty())
@@ -1261,7 +1294,7 @@ impl YoutubeNativeApp {
             self.auto_status = "DB no disponible".to_string();
             return;
         };
-        let pending: Vec<String> = match db::load_videos(conn) {
+        let pending: Vec<String> = match db::load_videos_pending_summaries(conn) {
             Ok(entries) => entries
                 .into_iter()
                 .filter(|e| e.summary.is_empty())
@@ -1565,10 +1598,15 @@ impl YoutubeNativeApp {
                 return;
             }
         };
+        info!(
+            "[WHISPER] Loaded candidates | total={} missing={} error_marked={}",
+            entries.len(),
+            db::count_missing_transcripts(conn).unwrap_or(0),
+            db::count_transcript_errors(conn).unwrap_or(0)
+        );
         self.whisper_processing = true;
         self.whisper_stop_requested = false;
-        self.whisper_cancel_token =
-            std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        self.whisper_cancel_token = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         self.whisper_current = 0;
         self.whisper_total = entries.len();
         self.whisper_status = format!("Iniciando lista Whisper para {} videos...", entries.len());

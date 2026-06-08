@@ -125,7 +125,7 @@ impl SummaryService {
 
         Self {
             client,
-            model: std::env::var("OLLAMA_MODEL").unwrap_or_else(|_| "gemma4:31b-cloud".into()),
+            model: std::env::var("OLLAMA_MODEL").unwrap_or_default(),
             endpoint,
             max_chars,
             chunk_size,
@@ -574,10 +574,118 @@ impl SummaryError {
                         status.as_u16() == 401
                             || status.as_u16() == 403
                             || status.as_u16() == 404
+                            || status.as_u16() == 429
                             || status.as_u16() == 503
                     })
             }
             _ => false,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// Create a `SummaryError::Http` with the given HTTP status code
+    /// by making a real HTTP request to a local TCP server.
+    fn http_err_with_status(status: u16) -> SummaryError {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+
+        let handle = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut buf = [0; 4096];
+            let _ = stream.read(&mut buf);
+            let response =
+                format!("HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(response.as_bytes());
+        });
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let err = rt.block_on(async {
+            let client = reqwest::Client::builder().no_proxy().build().unwrap();
+            let resp = client
+                .get(format!("http://127.0.0.1:{port}"))
+                .send()
+                .await
+                .unwrap();
+            resp.error_for_status().unwrap_err()
+        });
+
+        handle.join().unwrap();
+        SummaryError::Http(err)
+    }
+
+    #[test]
+    fn test_429_is_fatal_for_batch() {
+        let err = http_err_with_status(429);
+        assert!(
+            err.is_fatal_for_batch(),
+            "429 should be fatal for batch after retries exhausted"
+        );
+    }
+
+    #[test]
+    fn test_400_is_not_fatal_for_batch() {
+        let err = http_err_with_status(400);
+        assert!(
+            !err.is_fatal_for_batch(),
+            "400 should not be fatal for batch"
+        );
+    }
+
+    #[test]
+    fn test_401_is_fatal_for_batch() {
+        let err = http_err_with_status(401);
+        assert!(err.is_fatal_for_batch(), "401 should be fatal for batch");
+    }
+
+    #[test]
+    fn test_503_is_fatal_for_batch() {
+        let err = http_err_with_status(503);
+        assert!(err.is_fatal_for_batch(), "503 should be fatal for batch");
+    }
+
+    #[test]
+    fn test_empty_response_not_fatal() {
+        let err = SummaryError::EmptyResponse;
+        assert!(
+            !err.is_fatal_for_batch(),
+            "EmptyResponse should not be fatal for batch"
+        );
+    }
+
+    #[test]
+    fn test_from_env_model_fallback_and_override() {
+        // Sequential test: env var manipulation is not thread-safe,
+        // so we test both cases in a single test function.
+        let prev = std::env::var("OLLAMA_MODEL").ok();
+
+        // 1. Unset → fallback to empty
+        unsafe { std::env::remove_var("OLLAMA_MODEL") };
+        let svc = SummaryService::from_env();
+        assert!(
+            svc.model_name().is_empty(),
+            "Model should be empty when OLLAMA_MODEL is unset"
+        );
+
+        // 2. Set → reads env var
+        unsafe { std::env::set_var("OLLAMA_MODEL", "test-model-v2") };
+        let svc = SummaryService::from_env();
+        assert_eq!(
+            svc.model_name(),
+            "test-model-v2",
+            "Model should read from OLLAMA_MODEL env var"
+        );
+
+        // Restore original value
+        if let Some(val) = prev {
+            unsafe { std::env::set_var("OLLAMA_MODEL", val) };
+        } else {
+            unsafe { std::env::remove_var("OLLAMA_MODEL") };
         }
     }
 }

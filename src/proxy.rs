@@ -129,7 +129,11 @@ impl ProxyManager {
             state.version += 1;
             info!(
                 "ProxyManager: {} (version={})",
-                if enabled { "habilitado" } else { "deshabilitado" },
+                if enabled {
+                    "habilitado"
+                } else {
+                    "deshabilitado"
+                },
                 state.version
             );
         }
@@ -247,7 +251,10 @@ impl ProxyManager {
             }
             ProxyScheme::Socks5 => {
                 // SOCKS5 requiere feature "socks" en reqwest (agregar a Cargo.toml)
-                warn!("Proxy SOCKS5 ({}) requiere feature 'socks' en reqwest. Agregá 'socks' a features en Cargo.toml", config.url);
+                warn!(
+                    "Proxy SOCKS5 ({}) requiere feature 'socks' en reqwest. Agregá 'socks' a features en Cargo.toml",
+                    config.url
+                );
                 None
             }
         }
@@ -260,10 +267,22 @@ mod tests {
 
     #[test]
     fn test_parse_scheme() {
-        assert_eq!(ProxyScheme::from_url("http://proxy:8080"), Some(ProxyScheme::Http));
-        assert_eq!(ProxyScheme::from_url("https://proxy:8443"), Some(ProxyScheme::Https));
-        assert_eq!(ProxyScheme::from_url("socks5://127.0.0.1:9050"), Some(ProxyScheme::Socks5));
-        assert_eq!(ProxyScheme::from_url("socks5h://proxy:1080"), Some(ProxyScheme::Socks5));
+        assert_eq!(
+            ProxyScheme::from_url("http://proxy:8080"),
+            Some(ProxyScheme::Http)
+        );
+        assert_eq!(
+            ProxyScheme::from_url("https://proxy:8443"),
+            Some(ProxyScheme::Https)
+        );
+        assert_eq!(
+            ProxyScheme::from_url("socks5://127.0.0.1:9050"),
+            Some(ProxyScheme::Socks5)
+        );
+        assert_eq!(
+            ProxyScheme::from_url("socks5h://proxy:1080"),
+            Some(ProxyScheme::Socks5)
+        );
         assert_eq!(ProxyScheme::from_url(""), None);
     }
 

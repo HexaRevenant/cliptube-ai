@@ -87,9 +87,13 @@ impl TranscriptService {
             .proxy_manager
             .as_ref()
             .and_then(|pm| {
-                pm.read()
-                    .ok()
-                    .map(|state| if state.is_enabled() { state.version() } else { 0 })
+                pm.read().ok().map(|state| {
+                    if state.is_enabled() {
+                        state.version()
+                    } else {
+                        0
+                    }
+                })
             })
             .unwrap_or(0);
 
@@ -104,7 +108,10 @@ impl TranscriptService {
                     if let Ok(state) = pm.read() {
                         if let Some(rproxy) = state.build_reqwest_proxy() {
                             builder = builder.proxy(rproxy);
-                            info!("TranscriptService: proxy configurado (version={})", current_version);
+                            info!(
+                                "TranscriptService: proxy configurado (version={})",
+                                current_version
+                            );
                         }
                     }
                 }
@@ -114,7 +121,9 @@ impl TranscriptService {
                 builder = builder.no_proxy();
             }
 
-            inner.client = builder.build().expect("no se pudo reconstruir cliente HTTP");
+            inner.client = builder
+                .build()
+                .expect("no se pudo reconstruir cliente HTTP");
             inner.last_built_proxy_version = current_version;
         }
     }
@@ -137,8 +146,11 @@ impl TranscriptServiceInner {
 
 impl TranscriptService {
     fn client(&self) -> Client {
-        self.inner.read().expect("transcript inner lock poisoned")
-            .client.clone()
+        self.inner
+            .read()
+            .expect("transcript inner lock poisoned")
+            .client
+            .clone()
     }
 
     pub async fn fetch(
@@ -161,9 +173,11 @@ impl TranscriptService {
                 .await
             {
                 Ok(bundle) => {
-                    info!("transcript fetch internal ok: video_id={video_id} attempt={} attempt_time={}ms",
+                    info!(
+                        "transcript fetch internal ok: video_id={video_id} attempt={} attempt_time={}ms",
                         attempt + 1,
-                        attempt_start.elapsed().as_millis());
+                        attempt_start.elapsed().as_millis()
+                    );
                     return Ok(bundle);
                 }
                 Err(error) => {
@@ -178,8 +192,11 @@ impl TranscriptService {
                             }
                             self.rebuild_client_if_needed();
                             // Reintentar inmediatamente con el nuevo proxy
-                            info!("transcript fetch proxy rotate: video_id={} attempt={}",
-                                video_id, attempt + 1);
+                            info!(
+                                "transcript fetch proxy rotate: video_id={} attempt={}",
+                                video_id,
+                                attempt + 1
+                            );
                             continue;
                         }
                     }
@@ -298,7 +315,11 @@ impl TranscriptService {
             } else {
                 stderr.chars().take(320).collect::<String>()
             };
-            warn!("yt-dlp fallback FAILED: {}ms error={}", ytdlp_elapsed.as_millis(), stderr);
+            warn!(
+                "yt-dlp fallback FAILED: {}ms error={}",
+                ytdlp_elapsed.as_millis(),
+                stderr
+            );
             return Err(TranscriptError::YtDlp(format!(
                 "yt-dlp devolvió estado {} ({stderr})",
                 output.status,
@@ -823,8 +844,8 @@ fn extract_video_metadata(html: &str) -> (Option<String>, Option<String>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ai::SummaryService;
     use crate::ai::OutputStyle;
+    use crate::ai::SummaryService;
 
     #[tokio::test]
     async fn fetch_timing_test_video() {
@@ -870,28 +891,42 @@ mod tests {
             "\n=== PIPELINE {} ===",
             bundle.title.as_deref().unwrap_or("desconocido"),
         );
-        println!("1️⃣ FETCH: {}ms ({} chars, {} segments)", fetch_time.as_millis(), bundle.full_text.chars().count(), bundle.segments.len());
+        println!(
+            "1️⃣ FETCH: {}ms ({} chars, {} segments)",
+            fetch_time.as_millis(),
+            bundle.full_text.chars().count(),
+            bundle.segments.len()
+        );
 
-        // 2. SUMMARIZE con gemma4:31b-cloud (modelo cloud)
-        let summary_svc = SummaryService::from_env()
-            .with_model("gemma4:31b-cloud");
+        // 2. SUMMARIZE con el modelo configurado
+        let summary_svc = SummaryService::from_env();
         let summarize_start = Instant::now();
-        let ai_result = summary_svc.summarize(&bundle, OutputStyle::Chat, "es").await;
+        let ai_result = summary_svc
+            .summarize(&bundle, OutputStyle::Chat, "es")
+            .await;
         let summarize_time = summarize_start.elapsed();
 
         match ai_result {
             Ok(summary) => {
-                println!("2️⃣ SUMMARIZE: {}ms (summary={} chars, {} key points)",
+                println!(
+                    "2️⃣ SUMMARIZE: {}ms (summary={} chars, {} key points)",
                     summarize_time.as_millis(),
                     summary.summary.chars().count(),
                     summary.key_points.len(),
                 );
                 let total = fetch_time + summarize_time;
                 println!("3️⃣ TOTAL: {}ms", total.as_millis());
-                println!("✅ RESUMEN: {}", &summary.summary.chars().take(200).collect::<String>());
+                println!(
+                    "✅ RESUMEN: {}",
+                    &summary.summary.chars().take(200).collect::<String>()
+                );
             }
             Err(e) => {
-                println!("❌ SUMMARIZE ERROR: {}ms error={:?}", summarize_time.as_millis(), e);
+                println!(
+                    "❌ SUMMARIZE ERROR: {}ms error={:?}",
+                    summarize_time.as_millis(),
+                    e
+                );
             }
         }
     }

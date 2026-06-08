@@ -12,11 +12,13 @@ mod ui;
 
 use app::YoutubeNativeApp;
 use eframe::{NativeOptions, egui};
-use tracing::error;
+use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, fmt};
 
 fn main() -> Result<(), eframe::Error> {
     init_tracing();
+    info!("[BOOT] Starting ClipTube AI");
+    info!("[BOOT] Database path: {}", crate::db::db_path().display());
 
     if let Err(error) = config::validate_startup_config() {
         error!("[CONFIG] Error de configuración: {error}");
@@ -43,7 +45,7 @@ fn main() -> Result<(), eframe::Error> {
 }
 
 fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("debug"));
     let _ = fmt().with_env_filter(filter).try_init();
 }
 

@@ -4,9 +4,9 @@ use super::*;
 use crate::db;
 use crate::ui::{
     components::{
-        accent_dot, field_label, full_width_card, full_width_title_block, icon_button,
-        metric_chip, output_style_name, primary_button, secondary_button, section_header,
-        section_text, section_text_stretch,
+        accent_dot, field_label, full_width_card, full_width_title_block, icon_button, metric_chip,
+        output_style_name, primary_button, secondary_button, section_header, section_text,
+        section_text_stretch,
     },
     theme::{BrandColors, LayoutSpace},
 };
@@ -228,7 +228,7 @@ impl YoutubeNativeApp {
                     ui.horizontal_wrapped(|ui| {
                         if ui
                             .add_enabled(
-                                !self.busy,
+                                !self.busy && !self.model_name.trim().is_empty(),
                                 primary_button(if self.busy {
                                     self.ui_language.text("processing")
                                 } else {
